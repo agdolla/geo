@@ -1,3 +1,7 @@
+// Copyright (c) 2012, Jason Sanford
+// All rights reserved.
+// see: https://github.com/JasonSanford/GeoJSON-to-Google-Maps/blob/master/LICENSE
+
 var GeoJSON = function( geojson, options ){
 
 	var _geometryToGoogleMaps = function( geojsonGeometry, opts, geojsonProperties ){

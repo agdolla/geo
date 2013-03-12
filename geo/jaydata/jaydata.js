@@ -7182,10 +7182,12 @@ JAYLINT = (function () {
                 this.configurable = true;
                 if (typeof memberDefinitionData === "number") {
                     this.value = memberDefinitionData;
-                    this.dataType = "integer";
+                    this.type = $data.Integer;
+                    this.dataType = $data.Integer;
                 } else if (typeof memberDefinitionData === "string") {
                     this.value = memberDefinitionData;
-                    this.dataType = typeof memberDefinitionData;
+                    this.dataType = $data.String;
+                    this.type = $data.String;
                 } else {
                     for (var item in memberDefinitionData) {
                         if (memberDefinitionData.hasOwnProperty(item)) {
@@ -7244,11 +7246,9 @@ JAYLINT = (function () {
     MemberDefinition.translateDefinition = function (memDef, name, classFunction) {
         var holder = classFunction;
         var memberDefinition;
-
-
+        
         if (memDef.type && Container.isTypeRegistered(memDef.type)) {
             holder = Container.resolveType(memDef.type);
-
             if (typeof holder.translateDefinition === 'function') {
                 memberDefinition = holder.translateDefinition.apply(holder, arguments);
                 memberDefinition.name = memberDefinition.name || name;
@@ -7262,33 +7262,73 @@ JAYLINT = (function () {
             memberDefinition = new MemberDefinition(memberDefinition || memDef, holder);
             memberDefinition.name = name;
         }
+        classFunction.resolverThunks = classFunction.resolverThunks || [];
+        classFunction.childResolverThunks = classFunction.childResolverThunks || [];
+
+
         var t = memberDefinition.type;
+        var et = memberDefinition.elementType;
+
+        function addChildThunk(referencedType) {
+            if (referencedType && referencedType.isAssignableTo && $data.Entity && referencedType.isAssignableTo($data.Entity)) {
+                classFunction.childResolverThunks.push(function () {
+                    if (referencedType.resolveForwardDeclarations) {
+                        referencedType.resolveForwardDeclarations();
+                    }
+                });
+            }
+        }
+
+        addChildThunk(t);
+        addChildThunk(et);
+
         if ("string" === typeof t) {
             if ("@" === t[0]) {
                 memberDefinition.type = t.substr(1);
                 memberDefinition.dataType = t.substr(1);
             } else {
                 //forward declared types get this callback when type is registered
-                classFunction.container.resolveType(t, function (type) {
-                    memberDefinition.type = type;
-                    memberDefinition.dataType = type;
+                classFunction.resolverThunks.push(function () {
+                    var rt = classFunction.container.resolveType(t);
+                    addChildThunk(rt);
+                    memberDefinition.type = rt;
+                    memberDefinition.dataType = rt;
                 });
             }
         }
 
-        if (memberDefinition.elementType) {
-            t = memberDefinition.elementType;
-            if ("string" === typeof t) {
-                if ("@" === t[0]) {
-                    memberDefinition.elementType = t.substr(1);
+        if (et) {
+            if ("string" === typeof et) {
+                if ("@" === et[0]) {
+                    memberDefinition.elementType = et.substr(1);
                 } else {
                     //forward declared types get this callback when type is registered
-                    classFunction.container.resolveType(t, function (type) {
-                        memberDefinition.elementType = type;
+                    classFunction.resolverThunks.push(function () {
+                        var rt = classFunction.container.resolveType(et);
+                        addChildThunk(rt);
+                        memberDefinition.elementType = rt;
                     });
+
                 }
             }
         }
+
+
+        //if (!classFunction)
+
+        classFunction.resolveForwardDeclarations = function () {
+            classFunction.resolveForwardDeclarations = function () { };
+            $data.Trace.log("resolving: " + classFunction.fullName);
+            this.resolverThunks.forEach(function (thunk) {
+                thunk();
+            });
+            //this.resolverThunks = [];
+            this.childResolverThunks.forEach(function (thunk) {
+                thunk();
+            });
+            //this.childResolverThunks = [];
+        }
+
         return memberDefinition;
     };
 
@@ -7929,7 +7969,7 @@ JAYLINT = (function () {
 
                 case t === $data.SimpleBase:
                 case t === $data.Geospatial:
-                case t === $data.Geography:
+                case t === $data.GeographyBase:
                 case t === $data.GeographyPoint:
                 case t === $data.GeographyLineString:
                 case t === $data.GeographyPolygon:
@@ -7937,7 +7977,7 @@ JAYLINT = (function () {
                 case t === $data.GeographyMultiLineString:
                 case t === $data.GeographyMultiPolygon:
                 case t === $data.GeographyCollection:
-                case t === $data.Geometry:
+                case t === $data.GeometryBase:
                 case t === $data.GeometryPoint:
                 case t === $data.GeometryLineString:
                 case t === $data.GeometryPolygon:
@@ -7964,6 +8004,9 @@ JAYLINT = (function () {
         };
 
         this.resolveType = function (typeOrName, onResolved) {
+            //if ("string" === typeof typeOrName) {
+            //    console.log("@@@@String type!!!", typeOrName)
+            //}
             var t = typeOrName;
             t = this.getType(t, onResolved ? true : false, onResolved);
             var posT = classTypes.indexOf(t);
@@ -8037,7 +8080,7 @@ JAYLINT = (function () {
                     if (value instanceof $data.GeographyMultiLineString) return '$data.GeographyMultiLineString';
                     if (value instanceof $data.GeographyMultiPolygon) return '$data.GeographyMultiPolygon';
                     if (value instanceof $data.GeographyCollection) return '$data.GeographyCollection';
-                    if (value instanceof $data.Geography) return '$data.Geography';
+                    if (value instanceof $data.GeographyBase) return '$data.GeographyBase';
                     if (value instanceof $data.GeometryPoint) return '$data.GeometryPoint';
                     if (value instanceof $data.GeometryLineString) return '$data.GeometryLineString';
                     if (value instanceof $data.GeometryPolygon) return '$data.GeometryPolygon';
@@ -8045,7 +8088,7 @@ JAYLINT = (function () {
                     if (value instanceof $data.GeometryMultiLineString) return '$data.GeometryMultiLineString';
                     if (value instanceof $data.GeometryMultiPolygon) return '$data.GeometryMultiPolygon';
                     if (value instanceof $data.GeometryCollection) return '$data.GeometryCollection';
-                    if (value instanceof $data.Geometry) return '$data.Geometry';
+                    if (value instanceof $data.GeometryBase) return '$data.GeometryBase';
                     if (value instanceof $data.Geospatial) return '$data.Geospatial';
                     if (value instanceof $data.SimpleBase) return '$data.SimpleBase';
                     if (value instanceof $data.Guid) return '$data.Guid';
@@ -8081,6 +8124,15 @@ JAYLINT = (function () {
         };
 
         //name array ['', '', '']
+        this.getIndex = function (typeOrName) {
+            var t = this.resolveType(typeOrName);
+            return classTypes.indexOf(t);
+        }
+
+        this.resolveByIndex = function (index) {
+            return classTypes[index];
+        }
+
         this.registerType = function (nameOrNamesArray, type, factoryFunc) {
             ///<signature>
             ///<summary>Registers a type and optionally a lifetimeManager with a name
@@ -8174,6 +8226,7 @@ JAYLINT = (function () {
             }
         };
     }
+    $data.ContainerClass = ContainerCtor;
 
     $data.Number = typeof Number !== 'undefined' ? Number : function JayNumber() { };
     $data.Integer = typeof Integer !== 'undefined' ? Integer : function JayInteger() { };
@@ -8240,7 +8293,7 @@ JAYLINT = (function () {
     }, {
         create: function () { return Container.createInstance(this, arguments); },
         extend: function (name, container, instanceDefinition, classDefinition) {
-            if (!(container instanceof ContainerCtor)) {
+            if (container && !(container instanceof ContainerCtor)) {
                 classDefinition = instanceDefinition;
                 instanceDefinition = container;
                 container = undefined;
@@ -8540,31 +8593,40 @@ $data.Container.registerType(['$data.SimpleBase', 'SimpleBase'], $data.SimpleBas
     }
 
     $data.SimpleBase.apply(this, arguments);
-    this.type = this.constructor.type || 'InvalidType';
+    this.type = this.constructor.type || 'Unknown';
 };
 $data.SimpleBase.registerType('Geospatial', $data.Geospatial);
-$data.Container.registerType(['$data.Geospatial', 'Geospatial'], $data.Geospatial);/* $data.Geography */
-$data.Geography = function Geography() {
+$data.Container.registerType(['$data.Geospatial', 'Geospatial'], $data.Geospatial);/* $data.GeographyBase */
+$data.GeographyBase = function GeographyBase() {
     $data.Geospatial.apply(this, arguments);
+
+    this.crs = $data.GeographyBase.defaultCrs;
 };
 
-$data.Geography.parseFromString = function (strData) {
+$data.GeographyBase.defaultCrs = {
+    properties: {
+        name: 'EPSG:4326'
+    },
+    type: 'name'
+};
+
+$data.GeographyBase.parseFromString = function (strData) {
     var lparenIdx = strData.indexOf('(');
     if(lparenIdx >= 0){
         var name = strData.substring(0, lparenIdx).toLowerCase();
-        var type = $data.Geography.registered[name];
+        var type = $data.GeographyBase.registered[name];
 
-        if (type && type.parseFromString && type != $data.Geography) {
+        if (type && type.parseFromString && type != $data.GeographyBase) {
             return type.parseFromString(strData);
         } else {
             Guard.raise(new Exception('parseFromString', 'Not Implemented', strData));
         }
     }
 };
-$data.Geography.stringifyToUrl = function (geoData) {
-    if (geoData instanceof $data.Geography && geoData.constructor && geoData.constructor.stringifyToUrl) {
+$data.GeographyBase.stringifyToUrl = function (geoData) {
+    if (geoData instanceof $data.GeographyBase && geoData.constructor && geoData.constructor.stringifyToUrl) {
         return geoData.constructor.stringifyToUrl(geoData);
-    } else if (geoData instanceof $data.Geography && geoData.constructor && Array.isArray(geoData.constructor.validMembers) && geoData.constructor.validMembers.length === 1 && geoData.constructor.validMembers[0] === 'coordinates') {
+    } else if (geoData instanceof $data.GeographyBase && geoData.constructor && Array.isArray(geoData.constructor.validMembers) && geoData.constructor.validMembers[0] === 'coordinates') {
         var data = "geography'" + geoData.type.toUpperCase() + '(';
         function buildArray(d, context) {
             if (Array.isArray(d[0])) {
@@ -8592,23 +8654,23 @@ $data.Geography.stringifyToUrl = function (geoData) {
         Guard.raise(new Exception('stringifyToUrl on instance type', 'Not Implemented', geoData));
     }
 };
-$data.Geography.registerType = function (name, type, base) {
-    $data.SimpleBase.registerType(name, type, base || $data.Geography);
+$data.GeographyBase.registerType = function (name, type, base) {
+    $data.SimpleBase.registerType(name, type, base || $data.GeographyBase);
 
-    $data.Geography.registered = $data.Geography.registered || {};
-    $data.Geography.registered[name.toLowerCase()] = type;
+    $data.GeographyBase.registered = $data.GeographyBase.registered || {};
+    $data.GeographyBase.registered[name.toLowerCase()] = type;
 };
-$data.SimpleBase.registerType('Geography', $data.Geography, $data.Geospatial);
-$data.Container.registerType(['$data.Geography'], $data.Geography);
+$data.SimpleBase.registerType('GeographyBase', $data.GeographyBase, $data.Geospatial);
+$data.Container.registerType(['$data.GeographyBase'], $data.GeographyBase);
 
 /* $data.GeographyPoint */
 $data.GeographyPoint = function GeographyPoint(lon, lat) {
     if (lon && typeof lon === 'object' && Array.isArray(lon)) {
-        $data.Geography.call(this, { coordinates: lon });
+        $data.GeographyBase.call(this, { coordinates: lon });
     } else if (lon && typeof lon === 'object') {
-        $data.Geography.call(this, lon);
+        $data.GeographyBase.call(this, lon);
     } else {
-        $data.Geography.call(this, { coordinates: [lon || 0, lat || 0] });
+        $data.GeographyBase.call(this, { coordinates: [lon || 0, lat || 0] });
     }
 };
 $data.GeographyPoint.parseFromString = function (strData) {
@@ -8618,100 +8680,110 @@ $data.GeographyPoint.parseFromString = function (strData) {
     return new $data.GeographyPoint(parseFloat(values[0]), parseFloat(values[1]));
 };
 $data.GeographyPoint.validMembers = ['coordinates'];
-$data.Geography.registerType('Point', $data.GeographyPoint);
+$data.GeographyBase.registerType('Point', $data.GeographyPoint);
 Object.defineProperty($data.GeographyPoint.prototype, 'longitude', { get: function () { return this.coordinates[0]; }, set: function (v) { this.coordinates[0] = v; } });
 Object.defineProperty($data.GeographyPoint.prototype, 'latitude', { get: function () { return this.coordinates[1]; }, set: function (v) { this.coordinates[1] = v; } });
-$data.Container.registerType(['$data.GeographyPoint', 'GeographyPoint'], $data.GeographyPoint);
+$data.Container.registerType(['$data.GeographyPoint', 'GeographyPoint', '$data.Geography', 'Geography', 'geography', 'geo'], $data.GeographyPoint);
+$data.Geography = $data.GeographyPoint;
 
 /* $data.GeographyLineString */
 $data.GeographyLineString = function GeographyLineString(data) {
     if (Array.isArray(data)) {
-        $data.Geography.call(this, { coordinates: data });
+        $data.GeographyBase.call(this, { coordinates: data });
     } else {
-        $data.Geography.call(this, data);
+        $data.GeographyBase.call(this, data);
     }
 };
 $data.GeographyLineString.validMembers = ['coordinates'];
-$data.Geography.registerType('LineString', $data.GeographyLineString);
+$data.GeographyBase.registerType('LineString', $data.GeographyLineString);
 $data.Container.registerType(['$data.GeographyLineString', 'GeographyLineString'], $data.GeographyLineString);
 
 /* $data.GeographyPolygon */
 $data.GeographyPolygon = function GeographyPolygon(data) {
     if (Array.isArray(data)) {
-        $data.Geography.call(this, { coordinates: data });
+        $data.GeographyBase.call(this, { coordinates: data });
     } else {
-        $data.Geography.call(this, data);
+        $data.GeographyBase.call(this, data);
     }
 };
 $data.GeographyPolygon.validMembers = ['coordinates'];
-$data.Geography.registerType('Polygon', $data.GeographyPolygon);
+$data.GeographyBase.registerType('Polygon', $data.GeographyPolygon);
 $data.Container.registerType(['$data.GeographyPolygon', 'GeographyPolygon'], $data.GeographyPolygon);
 
 /* $data.GeographyMultiPoint */
 $data.GeographyMultiPoint = function GeographyMultiPoint(data) {
     if (Array.isArray(data)) {
-        $data.Geography.call(this, { coordinates: data });
+        $data.GeographyBase.call(this, { coordinates: data });
     } else {
-        $data.Geography.call(this, data);
+        $data.GeographyBase.call(this, data);
     }
 };
 $data.GeographyMultiPoint.validMembers = ['coordinates'];
-$data.Geography.registerType('MultiPoint', $data.GeographyMultiPoint);
+$data.GeographyBase.registerType('MultiPoint', $data.GeographyMultiPoint);
 $data.Container.registerType(['$data.GeographyMultiPoint', 'GeographyMultiPoint'], $data.GeographyMultiPoint);
 
 /* $data.GeographyMultiLineString */
 $data.GeographyMultiLineString = function GeographyMultiLineString(data) {
     if (Array.isArray(data)) {
-        $data.Geography.call(this, { coordinates: data });
+        $data.GeographyBase.call(this, { coordinates: data });
     } else {
-        $data.Geography.call(this, data);
+        $data.GeographyBase.call(this, data);
     }
 };
 $data.GeographyMultiLineString.validMembers = ['coordinates'];
-$data.Geography.registerType('MultiLineString', $data.GeographyMultiLineString);
+$data.GeographyBase.registerType('MultiLineString', $data.GeographyMultiLineString);
 $data.Container.registerType(['$data.GeographyMultiLineString', 'GeographyMultiLineString'], $data.GeographyMultiLineString);
 
 /* $data.GeographyMultiPolygon */
 $data.GeographyMultiPolygon = function GeographyMultiPolygon(data) {
     if (Array.isArray(data)) {
-        $data.Geography.call(this, { coordinates: data });
+        $data.GeographyBase.call(this, { coordinates: data });
     } else {
-        $data.Geography.call(this, data);
+        $data.GeographyBase.call(this, data);
     }
 };
 $data.GeographyMultiPolygon.validMembers = ['coordinates'];
-$data.Geography.registerType('MultiPolygon', $data.GeographyMultiPolygon);
+$data.GeographyBase.registerType('MultiPolygon', $data.GeographyMultiPolygon);
 $data.Container.registerType(['$data.GeographyMultiPolygon', 'GeographyMultiPolygon'], $data.GeographyMultiPolygon);
 
 /* $data.GeographyCollection */
 $data.GeographyCollection = function GeographyCollection(data) {
-    $data.Geography.call(this, data);
+    $data.GeographyBase.call(this, data);
 };
-$data.Geography.registerType('Collection', $data.GeographyCollection);
+$data.GeographyBase.registerType('GeometryCollection', $data.GeographyCollection);
 $data.Container.registerType(['$data.GeographyCollection', 'GeographyCollection'], $data.GeographyCollection);
 
 /* $data.Geometry */
-$data.Geometry = function Geometry() {
+$data.GeometryBase = function GeometryBase() {
     $data.Geospatial.apply(this, arguments);
+
+    this.crs = $data.GeometryBase.defaultCrs;
 };
 
-$data.Geometry.parseFromString = function (strData) {
+$data.GeometryBase.defaultCrs = {
+    properties: {
+        name: 'EPSG:0'
+    },
+    type: 'name'
+};
+
+$data.GeometryBase.parseFromString = function (strData) {
     var lparenIdx = strData.indexOf('(');
     if (lparenIdx >= 0) {
         var name = strData.substring(0, lparenIdx).toLowerCase();
-        var type = $data.Geometry.registered[name];
+        var type = $data.GeometryBase.registered[name];
 
-        if (type && type.parseFromString && type != $data.Geometry) {
+        if (type && type.parseFromString && type != $data.GeometryBase) {
             return type.parseFromString(strData);
         } else {
             Guard.raise(new Exception('parseFromString', 'Not Implemented', strData));
         }
     }
 };
-$data.Geometry.stringifyToUrl = function (geoData) {
-    if (geoData instanceof $data.Geometry && geoData.constructor && geoData.constructor.stringifyToUrl) {
+$data.GeometryBase.stringifyToUrl = function (geoData) {
+    if (geoData instanceof $data.GeometryBase && geoData.constructor && geoData.constructor.stringifyToUrl) {
         return geoData.constructor.stringifyToUrl(geoData);
-    } else if (geoData instanceof $data.Geometry && geoData.constructor && Array.isArray(geoData.constructor.validMembers) && geoData.constructor.validMembers.length === 1 && geoData.constructor.validMembers[0] === 'coordinates') {
+    } else if (geoData instanceof $data.GeometryBase && geoData.constructor && Array.isArray(geoData.constructor.validMembers) && geoData.constructor.validMembers[0] === 'coordinates') {
         var data = "geometry'" + geoData.type.toUpperCase() + '(';
         function buildArray(d, context) {
             if (Array.isArray(d[0])) {
@@ -8739,23 +8811,23 @@ $data.Geometry.stringifyToUrl = function (geoData) {
         Guard.raise(new Exception('stringifyToUrl on instance type', 'Not Implemented', geoData));
     }
 };
-$data.Geometry.registerType = function (name, type, base) {
-    $data.SimpleBase.registerType(name, type, base || $data.Geometry);
+$data.GeometryBase.registerType = function (name, type, base) {
+    $data.SimpleBase.registerType(name, type, base || $data.GeometryBase);
 
-    $data.Geometry.registered = $data.Geometry.registered || {};
-    $data.Geometry.registered[name.toLowerCase()] = type;
+    $data.GeometryBase.registered = $data.GeometryBase.registered || {};
+    $data.GeometryBase.registered[name.toLowerCase()] = type;
 };
-$data.SimpleBase.registerType('Geometry', $data.Geometry, $data.Geospatial);
-$data.Container.registerType(['$data.Geometry'], $data.Geometry);
+$data.SimpleBase.registerType('GeometryBase', $data.GeometryBase, $data.Geospatial);
+$data.Container.registerType(['$data.GeometryBase'], $data.GeometryBase);
 
 /* $data.GeometryPoint */
 $data.GeometryPoint = function GeometryPoint(lon, lat) {
     if (lon && typeof lon === 'object' && Array.isArray(lon)) {
-        $data.Geometry.call(this, { coordinates: lon });
+        $data.GeometryBase.call(this, { coordinates: lon });
     } else if (lon && typeof lon === 'object') {
-        $data.Geometry.call(this, lon);
+        $data.GeometryBase.call(this, lon);
     } else {
-        $data.Geometry.call(this, { coordinates: [lon || 0, lat || 0] });
+        $data.GeometryBase.call(this, { coordinates: [lon || 0, lat || 0] });
     }
 };
 $data.GeometryPoint.parseFromString = function (strData) {
@@ -8765,7 +8837,7 @@ $data.GeometryPoint.parseFromString = function (strData) {
     return new $data.GeometryPoint(parseFloat(values[0]), parseFloat(values[1]));
 };
 $data.GeometryPoint.validMembers = ['coordinates'];
-$data.Geometry.registerType('Point', $data.GeometryPoint);
+$data.GeometryBase.registerType('Point', $data.GeometryPoint);
 Object.defineProperty($data.GeometryPoint.prototype, 'x', { get: function () { return this.coordinates[0]; }, set: function (v) { this.coordinates[0] = v; } });
 Object.defineProperty($data.GeometryPoint.prototype, 'y', { get: function () { return this.coordinates[1]; }, set: function (v) { this.coordinates[1] = v; } });
 $data.Container.registerType(['$data.GeometryPoint', 'GeometryPoint'], $data.GeometryPoint);
@@ -8773,68 +8845,68 @@ $data.Container.registerType(['$data.GeometryPoint', 'GeometryPoint'], $data.Geo
 /* $data.GeometryLineString */
 $data.GeometryLineString = function GeometryLineString(data) {
     if (Array.isArray(data)) {
-        $data.Geometry.call(this, { coordinates: data });
+        $data.GeometryBase.call(this, { coordinates: data });
     } else {
-        $data.Geometry.call(this, data);
+        $data.GeometryBase.call(this, data);
     }
 };
 $data.GeometryLineString.validMembers = ['coordinates'];
-$data.Geometry.registerType('LineString', $data.GeometryLineString);
+$data.GeometryBase.registerType('LineString', $data.GeometryLineString);
 $data.Container.registerType(['$data.GeometryLineString', 'GeometryLineString'], $data.GeometryLineString);
 
 /* $data.GeometryPolygon */
 $data.GeometryPolygon = function GeometryPolygon(data) {
     if (Array.isArray(data)) {
-        $data.Geometry.call(this, { coordinates: data });
+        $data.GeometryBase.call(this, { coordinates: data });
     } else {
-        $data.Geometry.call(this, data);
+        $data.GeometryBase.call(this, data);
     }
 };
 $data.GeometryPolygon.validMembers = ['coordinates'];
-$data.Geometry.registerType('Polygon', $data.GeometryPolygon);
+$data.GeometryBase.registerType('Polygon', $data.GeometryPolygon);
 $data.Container.registerType(['$data.GeometryPolygon', 'GeometryPolygon'], $data.GeometryPolygon);
 
 /* $data.GeometryMultiPoint */
 $data.GeometryMultiPoint = function GeometryMultiPoint(data) {
     if (Array.isArray(data)) {
-        $data.Geometry.call(this, { coordinates: data });
+        $data.GeometryBase.call(this, { coordinates: data });
     } else {
-        $data.Geometry.call(this, data);
+        $data.GeometryBase.call(this, data);
     }
 };
 $data.GeometryMultiPoint.validMembers = ['coordinates'];
-$data.Geometry.registerType('MultiPoint', $data.GeometryMultiPoint);
+$data.GeometryBase.registerType('MultiPoint', $data.GeometryMultiPoint);
 $data.Container.registerType(['$data.GeometryMultiPoint', 'GeometryMultiPoint'], $data.GeometryMultiPoint);
 
 /* $data.GeometryMultiLineString */
 $data.GeometryMultiLineString = function GeometryMultiLineString(data) {
     if (Array.isArray(data)) {
-        $data.Geometry.call(this, { coordinates: data });
+        $data.GeometryBase.call(this, { coordinates: data });
     } else {
-        $data.Geometry.call(this, data);
+        $data.GeometryBase.call(this, data);
     }
 };
 $data.GeometryMultiLineString.validMembers = ['coordinates'];
-$data.Geometry.registerType('MultiLineString', $data.GeometryMultiLineString);
+$data.GeometryBase.registerType('MultiLineString', $data.GeometryMultiLineString);
 $data.Container.registerType(['$data.GeometryMultiLineString', 'GeometryMultiLineString'], $data.GeometryMultiLineString);
 
 /* $data.GeometryMultiPolygon */
 $data.GeometryMultiPolygon = function GeometryMultiPolygon(data) {
     if (Array.isArray(data)) {
-        $data.Geometry.call(this, { coordinates: data });
+        $data.GeometryBase.call(this, { coordinates: data });
     } else {
-        $data.Geometry.call(this, data);
+        $data.GeometryBase.call(this, data);
     }
 };
 $data.GeometryMultiPolygon.validMembers = ['coordinates'];
-$data.Geometry.registerType('MultiPolygon', $data.GeometryMultiPolygon);
+$data.GeometryBase.registerType('MultiPolygon', $data.GeometryMultiPolygon);
 $data.Container.registerType(['$data.GeometryMultiPolygon', 'GeometryMultiPolygon'], $data.GeometryMultiPolygon);
 
 /* $data.GeometryCollection */
 $data.GeometryCollection = function GeometryCollection(data) {
-    $data.Geometry.call(this, data);
+    $data.GeometryBase.call(this, data);
 };
-$data.Geometry.registerType('Collection', $data.GeometryCollection);
+$data.GeometryBase.registerType('GeometryCollection', $data.GeometryCollection);
 $data.Container.registerType(['$data.GeometryCollection', 'GeometryCollection'], $data.GeometryCollection);
 
 $data.Guid = function Guid(value) {
@@ -12321,7 +12393,7 @@ $C('$data.Expressions.QueryExpressionCreator', $data.Expressions.EntityExpressio
 });
 
 $C('$data.Expressions.ServiceOperationExpression', $data.Expressions.ExpressionNode, null, {
-    constructor: function (source, selector, params, cfg, bindedEntity) {
+    constructor: function (source, selector, params, cfg, boundItem) {
         ///<signature>
         ///<param name="source" type="$data.Expressions.EntityContextExpression" />
         ///<param name="selector" type="$data.Expressions.MemberInfoExpression" />
@@ -12335,7 +12407,7 @@ $C('$data.Expressions.ServiceOperationExpression', $data.Expressions.ExpressionN
         this.selector = selector
         this.params = params
         this.cfg = cfg;
-        this.bindedEntity = bindedEntity;
+        this.boundItem = boundItem;
 
         function findContext() {
             //TODO: use source from function parameter and return a value at the end of the function
@@ -12552,7 +12624,7 @@ $C('$data.Expressions.ServiceOperationExpression', $data.Expressions.ExpressionN
     open: function (callBack, tran, isWrite) {
         if (isWrite === undefined)
             isWrite = true;
-
+	callBack.oncomplete = callBack.oncomplete || function(){};
         if (tran) {
             callBack.success(tran.transaction);
         } else if (this.database) {
@@ -12581,7 +12653,8 @@ $C('$data.Expressions.ServiceOperationExpression', $data.Expressions.ExpressionN
         var cmd = new $data.dbClient.openDatabaseClient.OpenDbCommand(this, queryStr, params);
         return cmd;
     }
-}, null);$data.Class.define('$data.dbClient.jayStorageClient.JayStorageCommand', $data.dbClient.DbCommand, null,
+}, null);
+$data.Class.define('$data.dbClient.jayStorageClient.JayStorageCommand', $data.dbClient.DbCommand, null,
 {
     constructor: function (con, queryStr, params) {
         this.query = queryStr;
@@ -13397,11 +13470,11 @@ $data.Entity = Entity = $data.Class.define("$data.Entity", null, null, {
         }
         var entityPk = this.getType().memberDefinitions.getKeyProperties();
         for (var i = 0; i < entityPk.length; i++) {
-            if (this[entityPk[i].name] == entity[entityPk[i].name]) {
-                return true;
+            if (this[entityPk[i].name] != entity[entityPk[i].name]) {
+                return false;
             }
         }
-        return false;
+        return true;
     },
 
     propertyChanging: {
@@ -13721,7 +13794,6 @@ $data.Entity = Entity = $data.Class.define("$data.Entity", null, null, {
                         }
                     }
                 }
-                console.log("ret init:", initData);
                 return initData;
             }
         }
@@ -13753,7 +13825,11 @@ $data.Entity = Entity = $data.Class.define("$data.Entity", null, null, {
 });
 
 
-$data.define = function (name, definition) {
+$data.define = function (name, container, definition) {
+    if (container && !(container instanceof $data.ContainerClass)) {
+        definition = container;
+        container = undefined;
+    }
     if (!definition) {
         throw new Error("json object type is not supported yet");
     }
@@ -13809,7 +13885,7 @@ $data.define = function (name, definition) {
     }
 
 
-    var entityType = $data.Entity.extend(name, _def);
+    var entityType = $data.Entity.extend(name, container, _def);
     return entityType;
 }
 $data.implementation = function (name) {
@@ -13984,6 +14060,7 @@ $data.Class.define('$data.EntityContext', null, null,
         };
 
 
+        this.ready = this.onReady();
     },
     beginTransaction: function () {
         var tables = null;
@@ -14070,17 +14147,19 @@ $data.Class.define('$data.EntityContext', null, null,
     _initStorageModelSync: function() {
         var _memDefArray = this.getType().memberDefinitions.asArray();
 
+
         for (var i = 0; i < _memDefArray.length; i++) {
             var item = _memDefArray[i];
             if ('dataType' in item) {
                 var itemResolvedDataType = Container.resolveType(item.dataType);
                 if (itemResolvedDataType && itemResolvedDataType.isAssignableTo && itemResolvedDataType.isAssignableTo($data.EntitySet)) {
+                    var elementType = Container.resolveType(item.elementType);
                     var storageModel = new $data.StorageModel();
                     storageModel.TableName = item.tableName || item.name;
                     storageModel.TableOptions = item.tableOptions;
                     storageModel.ItemName = item.name;
-                    storageModel.LogicalType = Container.resolveType(item.elementType);
-                    storageModel.LogicalTypeName = storageModel.LogicalType.name;
+                    storageModel.LogicalType = elementType;
+                    storageModel.LogicalTypeName = elementType.name;
                     storageModel.PhysicalTypeName = $data.EntityContext._convertLogicalTypeNameToPhysical(storageModel.LogicalTypeName);
                     storageModel.ContextType = this.getType();
 		    if (item.indices) {
@@ -14126,13 +14205,14 @@ $data.Class.define('$data.EntityContext', null, null,
     },
     _initializeStorageModel: function () {
 
-        //this.getType().memberDefinitions.asArray().forEach(function (item) {
+        
         var _memDefArray = this.getType().memberDefinitions.asArray();
-        //}, this);
+        
 
         if (typeof intellisense !== 'undefined')
             return;
 
+        
         for (var i = 0; i < this._storageModel.length; i++) {
             var storageModel = this._storageModel[i];
 
@@ -14207,7 +14287,8 @@ $data.Class.define('$data.EntityContext', null, null,
             this._buildDbType_modifyClassDefinition(dbEntityClassDefinition, storageModel, this);
 
             //create physical type
-            storageModel.PhysicalType = $data.Class.define(storageModel.PhysicalTypeName, $data.Entity, null, dbEntityInstanceDefinition, dbEntityClassDefinition);
+            //TODO
+            storageModel.PhysicalType = $data.Class.define(storageModel.PhysicalTypeName, $data.Entity, storageModel.LogicalType.container, dbEntityInstanceDefinition, dbEntityClassDefinition);
         }
     },
     _initializeActions: function (es, ctor, esDef) {
@@ -14481,6 +14562,7 @@ $data.Class.define('$data.EntityContext', null, null,
 
         return pHandler.getPromise();
     },
+    ready: { type: $data.Promise },
     getEntitySetFromElementType: function (elementType) {
         /// <signature>
         ///     <summary>Gets the matching EntitySet for an element type.</summary>
@@ -15490,6 +15572,11 @@ $data.Class.define('$data.EntityContext', null, null,
     },
     storeToken: { type: Object }
 }, {
+    inheritedTypeProcessor: function(type) {
+        if (type.resolveForwardDeclarations) {
+            type.resolveForwardDeclarations();
+        }
+    },
     generateServiceOperation: function (cfg) {
 
         var fn;
@@ -15529,8 +15616,12 @@ $data.Class.define('$data.EntityContext', null, null,
             fn = function () {
                 var context = this;
 
-                var bindedEntity;
+                var boundItem;
                 if (this instanceof $data.Entity) {
+                    if (!cfg.method) {
+                        cfg.method = 'POST';
+                    }
+
                     if (this.context) {
                         context = this.context;
                     } else {
@@ -15538,7 +15629,7 @@ $data.Class.define('$data.EntityContext', null, null,
                         return;
                     }
 
-                    bindedEntity = {
+                    boundItem = {
                         data: this,
                         entitySet: context.getEntitySetFromElementType(this.getType())
                     };
@@ -15558,12 +15649,12 @@ $data.Class.define('$data.EntityContext', null, null,
                 }
 
                 var ec = Container.createEntityContextExpression(context);
-                var memberdef = (bindedEntity ? bindedEntity.data : context).getType().getMemberDefinition(cfg.serviceName);
+                var memberdef = (boundItem ? boundItem.data : context).getType().getMemberDefinition(cfg.serviceName);
                 var es = Container.createServiceOperationExpression(ec,
                         Container.createMemberInfoExpression(memberdef),
                         paramConstExpression,
                         cfg,
-                        bindedEntity);
+                        boundItem);
 
                 //Get callback function
                 var clb = arguments[arguments.length - 1];
@@ -15639,35 +15730,35 @@ $data.Class.define('$data.QueryProvider', null, null,
     }
 }, null);$data.Class.define('$data.ModelBinder', null, null, {
 
-    constructor: function(context){
+    constructor: function (context) {
         this.context = context;
         this.providerName = null;
-        if (this.context.storageProvider && typeof this.context.storageProvider.getType === 'function'){
+        if (this.context.storageProvider && typeof this.context.storageProvider.getType === 'function') {
             this.references = !(this.context.storageProvider.providerConfiguration.modelBinderOptimization || false);
-            for (var i in $data.RegisteredStorageProviders){
-                if ($data.RegisteredStorageProviders[i] === this.context.storageProvider.getType()){
+            for (var i in $data.RegisteredStorageProviders) {
+                if ($data.RegisteredStorageProviders[i] === this.context.storageProvider.getType()) {
                     this.providerName = i;
                 }
             }
         }
     },
-    
-    _deepExtend: function(o, r){
-        if (o === null || o === undefined){
+
+    _deepExtend: function (o, r) {
+        if (o === null || o === undefined) {
             return r;
         }
-        for (var i in r){
-            if (o.hasOwnProperty(i)){
-                if (typeof r[i] === 'object'){
-                    if (Array.isArray(r[i])){
-                        for (var j = 0; j < r[i].length; j++){
-                            if (o[i].indexOf(r[i][j]) < 0){
+        for (var i in r) {
+            if (o.hasOwnProperty(i)) {
+                if (typeof r[i] === 'object') {
+                    if (Array.isArray(r[i])) {
+                        for (var j = 0; j < r[i].length; j++) {
+                            if (o[i].indexOf(r[i][j]) < 0) {
                                 o[i].push(r[i][j]);
                             }
                         }
-                    }else this._deepExtend(o[i], r[i]);
+                    } else this._deepExtend(o[i], r[i]);
                 }
-            }else{
+            } else {
                 o[i] = r[i];
             }
         }
@@ -15675,95 +15766,108 @@ $data.Class.define('$data.QueryProvider', null, null,
             o.changedProperties = undefined;
         return o;
     },
-    
-    _buildSelector: function(meta, context){
-        if (meta.$selector){
-            if (!(Array.isArray(meta.$selector))){
+
+    _buildSelector: function (meta, context) {
+        if (meta.$selector) {
+            if (!(Array.isArray(meta.$selector))) {
                 meta.$selector = [meta.$selector];
             }
-            
-            for (var i = 0; i < meta.$selector.length; i++){
+
+            for (var i = 0; i < meta.$selector.length; i++) {
                 var selector = meta.$selector[i].replace('json:', '');
                 context.src += 'if(';
                 var path = selector.split('.');
-                for (var j = 0; j < path.length; j++){
+                for (var j = 0; j < path.length; j++) {
                     context.src += 'di.' + path.slice(0, j + 1).join('.') + (j < path.length - 1 ? ' && ' : ' !== undefined && typeof di.' + selector + ' === "object"');
                 }
                 context.src += '){di = di.' + selector + ';}' + (i < meta.$selector.length - 1 ? 'else ' : '');
             }
-            
+
             context.src += 'if (di === null){';
             if (context.iter) context.src += context.iter + ' = null;';
             context.src += 'return null;';
             context.src += '}';
         }
     },
-    
-    _buildKey: function(name, type, keys, context, data){
-        if (keys){
+
+    _buildKey: function (name, type, keys, context, data) {
+        if (keys) {
             var type = Container.resolveType(type);
+            var typeIndex = Container.getIndex(type);
             type = type.fullName || type.name;
             context.src += 'var ' + name + 'Fn = function(di){';
-            if (!(Array.isArray(keys)) || keys.length == 1){
+            if (!(Array.isArray(keys)) || keys.length == 1) {
                 if (typeof keys !== 'string') keys = keys[0];
                 context.src += 'if (typeof di.' + keys + ' === "undefined") return undefined;';
                 context.src += 'if (di.' + keys + ' === null) return null;';
-                context.src += 'var key = ("' + type + '_' + keys + '#" + di.' + keys + ');';
-            }else{
+                context.src += 'var key = ("' + type + '_' + typeIndex + '_' + keys + '#" + di.' + keys + ');';
+            } else {
                 context.src += 'var key = "";';
-                for (var i = 0; i < keys.length; i++){
+                for (var i = 0; i < keys.length; i++) {
                     var id = typeof keys[i] !== 'object' ? keys[i] : keys[i].$source;
                     context.src += 'if (typeof di.' + id + ' === "undefined") return undefined;';
                     context.src += 'if (di.' + id + ' === null) return null;';
-                    context.src += 'key += ("' + type + '_' + id + '#" + di.' + id + ');';
+                    context.src += 'key += ("' + type + '_' + typeIndex + '_' + id + '#" + di.' + id + ');';
                 }
             }
-            
+
             context.src += 'return key;};';
         }
-        
+
         context.src += 'var ' + name + ' = ' + (keys ? name + 'Fn(' + (data || 'di') + ')' : 'undefined') + ';';
     },
 
-    build: function(meta, context){
-        if (meta.$selector){
+    build: function (meta, context) {
+        if (meta.$selector) {
             if (!(Array.isArray(meta.$selector))) meta.$selector = [meta.$selector];
-            for (var i = 0; i < meta.$selector.length; i++){
+            for (var i = 0; i < meta.$selector.length; i++) {
                 meta.$selector[i] = meta.$selector[i].replace('json:', '');
             }
         }
-        
-        if (meta.$value){
-            if (typeof meta.$value === 'function'){
+
+        if (meta.$value) {
+            if (typeof meta.$value === 'function') {
+                if (!context.forEach) context.src += 'var di = data;';
                 context.src += 'var fn = function(){ return meta' + (context.meta.length ? '.' + context.meta.join('.') : '') + '.$value.call(self, meta' + (context.meta.length ? '.' + context.meta.join('.') : '') + ', di); };';
-                context.item = 'fn()';
-            }else if (meta.$type){
+                if (meta.$type) {
+                    var type = Container.resolveName(Container.resolveType(meta.$type));
+                    var typeIndex = Container.getIndex(Container.resolveType(meta.$type));
+                    var converter = this.context.storageProvider.fieldConverter.fromDb[type];
+                    if (converter) {
+                        context.item = 'self.context.storageProvider.fieldConverter.fromDb["' + type + '"](fn())';
+                    } else {
+                        context.item = 'new (Container.resolveByIndex(' + typeIndex + '))(fn())';
+                    }
+                } else context.item = 'fn()';
+            } else if (meta.$type) {
                 var type = Container.resolveName(Container.resolveType(meta.$type));
+                var typeIndex = Container.getIndex(Container.resolveType(meta.$type));
                 var converter = this.context.storageProvider.fieldConverter.fromDb[type];
-                if (converter){
+                if (converter) {
                     context.item = 'self.context.storageProvider.fieldConverter.fromDb["' + type + '"](' + meta.$value + ')';
-                }else{
-                    context.item = 'new ' + type + '(' + meta.$value + ')';
+                } else {
+                    context.item = 'new (Container.resolveByIndex(' + typeIndex + '))(' + meta.$value + ')';
                 }
-            }else context.item = meta.$value;
-        }else if (meta.$source){
+            } else context.item = meta.$value;
+        } else if (meta.$source) {
             var type = Container.resolveName(Container.resolveType(meta.$type));
+            var typeIndex = Container.getIndex(Container.resolveType(meta.$type));
             var converter = this.context.storageProvider.fieldConverter.fromDb[type];
             var item = '_' + type.replace(/\./gi, '_') + '_';
             if (!context.forEach) context.src += 'var di = data;';
             context.item = item;
             this._buildSelector(meta, context);
-            if (converter){
+            if (converter) {
                 context.src += 'var ' + item + ' = self.context.storageProvider.fieldConverter.fromDb["' + type + '"](di.' + meta.$source + ');';
-            }else{
-                context.src += 'var ' + item + ' = new ' + type + '(di.' + meta.$source + ');';
+            } else {
+                context.src += 'var ' + item + ' = new (Container.resolveByIndex(' + typeIndex + '))(di.' + meta.$source + ');';
             }
-        }else if (meta.$item){
+        } else if (meta.$item) {
             context.meta.push('$item');
             var iter = (context.item && context.current ? context.item + '.' + context.current : (context.item ? context.item : 'result'));
             if (iter.indexOf('.') < 0) context.src += 'var ' + iter + ';';
             context.src += 'var fn = function(di){';
-            if (meta.$selector){
+            if (meta.$selector) {
                 context.src += 'if (typeof di !== "undefined" && !(Array.isArray(di))){';
                 this._buildSelector(meta, context);
                 context.src += '}';
@@ -15784,7 +15888,7 @@ $data.Class.define('$data.QueryProvider', null, null,
             context.src += iter + ' = typeof ' + iter + ' == "undefined" ? [] : ' + iter + ';';
             //context.src += iter + ' = [];';
             context.iter = iter;
-            if (this.references && meta.$item.$keys){
+            if (this.references && meta.$item.$keys) {
                 var keycacheName = 'keycache_' + iter.replace(/\./gi, '_');
                 context.src += 'var ' + keycacheName + ';';
                 context.src += 'var kci = keycacheIter.indexOf(' + iter + ');';
@@ -15805,11 +15909,11 @@ $data.Class.define('$data.QueryProvider', null, null,
             if (this.providerName == "sqLite" && this.references && meta.$item.$keys) this._buildKey(itemForKey, meta.$type, meta.$item.$keys, context);
             var item = context.item || 'iter';
             context.item = item;
-            if (!meta.$item.$source){
+            if (!meta.$item.$source) {
                 this._buildSelector(meta.$item, context);
             }
             this.build(meta.$item, context);
-            if (this.references && meta.$keys){
+            if (this.references && meta.$keys) {
                 context.src += 'if (forKey){';
                 context.src += 'if (cache[forKey]){';
                 context.src += iter + ' = cache[forKey];';
@@ -15831,8 +15935,8 @@ $data.Class.define('$data.QueryProvider', null, null,
                 context.src += '}';
                 context.src += '}';
                 context.src += '}';
-            }else{
-                if (this.references && meta.$item.$keys){
+            } else {
+                if (this.references && meta.$item.$keys) {
                     context.src += 'if (typeof ' + itemForKey + ' !== "undefined" && ' + itemForKey + ' !== null){';
                     context.src += 'if (typeof keycache_' + iter.replace(/\./gi, '_') + ' !== "undefined" && ' + itemForKey + '){';
                     context.src += 'if (keycache_' + iter.replace(/\./gi, '_') + '.indexOf(' + itemForKey + ') < 0){';
@@ -15853,7 +15957,7 @@ $data.Class.define('$data.QueryProvider', null, null,
                     context.src += '}}else{';
                     context.src += iter + '.push(' + (context.item || item) + ');';
                     context.src += '}';*/
-                }else{
+                } else {
                     context.src += iter + '.push(' + (context.item || item) + ');';
                 }
             }
@@ -15864,8 +15968,8 @@ $data.Class.define('$data.QueryProvider', null, null,
             context.item = null;
             context.src += '};fn(typeof di === "undefined" ? data : di);'
             context.meta.pop();
-        }else if (meta.$type){
-            if (!context.forEach){
+        } else if (meta.$type) {
+            if (!context.forEach) {
                 context.src += 'if (typeof di === "undefined"){';
                 context.src += 'var di = data;';
                 this._buildSelector(meta, context);
@@ -15873,29 +15977,30 @@ $data.Class.define('$data.QueryProvider', null, null,
             }
             var resolvedType = Container.resolveType(meta.$type);
             var type = Container.resolveName(resolvedType);
+            var typeIndex = Container.getIndex(resolvedType);
             var isEntityType = resolvedType.isAssignableTo && resolvedType.isAssignableTo($data.Entity);
             var item = '_' + type.replace(/\./gi, '_') + '_';
             if (context.item == item) item += 'new_';
             context.item = item;
-            
-            
+
+
             var isPrimitive = false;
             if (!meta.$source && !meta.$value && resolvedType !== $data.Array && resolvedType !== $data.Object && !resolvedType.isAssignableTo)
                 isPrimitive = true;
-            if (resolvedType === $data.Object || resolvedType === $data.Array){
+            if (resolvedType === $data.Object || resolvedType === $data.Array) {
                 var keys = Object.keys(meta);
                 if (keys.length == 1 || (keys.length == 2 && meta.$selector)) isPrimitive = true;
             }
 
             if (isPrimitive) {
                 var converter = this.context.storageProvider.fieldConverter.fromDb[type];
-                if (converter){
+                if (converter) {
                     context.src += 'var ' + item + ' = di != undefined ? self.context.storageProvider.fieldConverter.fromDb["' + type + '"](di) : di;';
-                }else{
+                } else {
                     context.src += 'var ' + item + ' = di;';
                 }
             } else {
-                if (this.references && meta.$keys){
+                if (this.references && meta.$keys) {
                     this._buildKey('itemKey', meta.$type, meta.$keys, context);
                     context.src += 'if (itemKey === null) return null;';
                     context.src += 'var ' + item + ';';
@@ -15903,9 +16008,9 @@ $data.Class.define('$data.QueryProvider', null, null,
                     context.src += item + ' = cache[itemKey];';
                     context.src += '}else{';
                     if (isEntityType) {
-                        context.src += item + ' = new ' + type + '(undefined, { setDefaultValues: false });';
+                        context.src += item + ' = new (Container.resolveByIndex(' + typeIndex + '))(undefined, { setDefaultValues: false });';
                     } else {
-                        context.src += item + ' = new ' + type + '();';
+                        context.src += item + ' = new (Container.resolveByIndex(' + typeIndex + '))();';
                     }
                     context.src += 'if (itemKey){';
                     context.src += 'cache[itemKey] = ' + item + ';';
@@ -15913,41 +16018,42 @@ $data.Class.define('$data.QueryProvider', null, null,
                     context.src += '}';
                 } else {
                     if (isEntityType) {
-                        context.src += 'var ' + item + ' = new ' + type + '(undefined, { setDefaultValues: false });';
+                        context.src += 'var ' + item + ' = new (Container.resolveByIndex(' + typeIndex + '))(undefined, { setDefaultValues: false });';
                     } else {
-                        context.src += 'var ' + item + ' = new ' + type + '();';
+                        context.src += 'var ' + item + ' = new (Container.resolveByIndex(' + typeIndex + '))();';
                     }
                 }
             }
-            for (var i in meta){
-                if (i.indexOf('$') < 0){
+            for (var i in meta) {
+                if (i.indexOf('$') < 0) {
                     context.current = i;
-                    if (!meta[i].$item){
-                        if (meta[i].$value){
+                    if (!meta[i].$item) {
+                        if (meta[i].$value) {
                             context.meta.push(i);
                             var item = context.item;
                             this.build(meta[i], context);
                             context.src += item + '.' + i + ' = ' + context.item + ';';
                             context.item = item;
                             context.meta.pop();
-                        }else if (meta[i].$source){
+                        } else if (meta[i].$source) {
                             context.src += 'var fn = function(di){';
                             this._buildSelector(meta[i], context);
-                            if (meta[i].$type){
+                            if (meta[i].$type) {
                                 var type = Container.resolveName(Container.resolveType(meta[i].$type));
+                                var typeIndex = Container.getIndex(Container.resolveType(meta[i].$type));
                                 var converter = this.context.storageProvider.fieldConverter.fromDb[type];
-                                if (converter){
+                                if (converter) {
                                     context.src += 'return self.context.storageProvider.fieldConverter.fromDb["' + type + '"](di.' + meta[i].$source + ');';
-                                }else{
-                                    context.src += 'return new ' + type + '(di.' + meta[i].$source + ');';
+                                } else {
+                                    context.src += 'return new (Container.resolveByIndex(' + typeIndex + '))(di.' + meta[i].$source + ');';
                                 }
-                            }else{
+                            } else {
                                 context.src += item + '.' + i + ' = di.' + meta[i].$source + ';';
                             }
                             context.src += '};';
                             if (meta[i].$type) context.src += item + '.' + i + ' = fn(di);';
                             else context.src += 'fn(di);';
-                        }else if (meta[i].$type){
+                        } else if (meta[i].$type) {
                             context.meta.push(i);
                             context.src += 'var fn = function(di){';
                             this._buildSelector(meta[i], context);
@@ -15957,21 +16063,23 @@ $data.Class.define('$data.QueryProvider', null, null,
                             else context.src += item + '.' + i + ' = fn(di);';
                             context.item = item;
                             context.meta.pop();
-                        }else if (meta.$type){
+                        } else if (meta.$type) {
                             var memDef = Container.resolveType(meta.$type).memberDefinitions.getMember(i);
                             var type = Container.resolveName(memDef.type);
-                            var entityType = Container.resolveName(Container.resolveType(meta.$type));
+                            var entityType = Container.resolveType(meta.$type);
+                            var entityTypeIndex = Container.getIndex(meta.$type);
                             var converter = this.context.storageProvider.fieldConverter.fromDb[type];
-                            if (this.providerName && memDef && memDef.converter && memDef.converter[this.providerName] && typeof memDef.converter[this.providerName].fromDb == 'function'){
-                                context.src += item + '.' + i + ' = Container.resolveType("' + entityType + '").memberDefinitions.getMember("' + i + '").converter.' + this.providerName + '.fromDb(di.' + meta[i] + ', Container.resolveType("' + entityType + '").memberDefinitions.getMember("' + i + '"), self.context, Container.resolveType("' + entityType + '"));';
-                            }else if (converter){
+                            if (this.providerName && memDef && memDef.converter && memDef.converter[this.providerName] && typeof memDef.converter[this.providerName].fromDb == 'function') {
+                                context.src += item + '.' + i + ' = Container.resolveByIndex("' + entityTypeIndex + '").memberDefinitions.getMember("' + i + '").converter.' + this.providerName + '.fromDb(di.' + meta[i] + ', Container.resolveByIndex("' + entityTypeIndex + '").memberDefinitions.getMember("' + i + '"), self.context, Container.resolveByIndex("' + entityTypeIndex + '"));';
+                            } else if (converter) {
                                 context.src += item + '.' + i + ' = self.context.storageProvider.fieldConverter.fromDb["' + type + '"](di.' + meta[i] + ');';
-                            }else{
-                                var type = Container.resolveName(Container.resolveType(type.memberDefinitions.getMember(i).type));
-                                context.src += item + '.' + i + ' = new ' + type + '(di.' + meta[i] + ');';
+                            } else {
+                                //var type = Container.resolveName(Container.resolveType(type.memberDefinitions.getMember(i).type));
+                                var typeIndex = Container.getIndex(Container.resolveType(type.memberDefinitions.getMember(i).type));
+                                context.src += item + '.' + i + ' = new (Container.resolveByIndex(' + typeIndex + '))(di.' + meta[i] + ');';
                             }
                         }
-                    }else{
+                    } else {
                         context.meta.push(i);
                         this.build(meta[i], context);
                         context.item = item;
@@ -15979,17 +16087,17 @@ $data.Class.define('$data.QueryProvider', null, null,
                     }
                 }
             }
-            if (this.references && meta.$keys){
+            if (this.references && meta.$keys) {
                 context.src += 'if (' + item + ' instanceof $data.Entity){' + item + '.changedProperties = undefined;}';
                 //context.src += '}';
-            }else{
+            } else {
                 context.src += 'if (' + item + ' instanceof $data.Entity){' + item + '.changedProperties = undefined;}';
             }
         }
     },
 
     call: function (data, meta) {
-        if (!Object.getOwnPropertyNames(meta).length){
+        if (!Object.getOwnPropertyNames(meta).length) {
             return data;
         }
         var context = {
@@ -16002,7 +16110,7 @@ $data.Class.define('$data.QueryProvider', null, null,
         context.src += 'var keycache = [];';
         context.src += 'var keycacheIter = [];';
         this.build(meta, context);
-        if (context.item) context.src += 'if (!result) result = ' + context.item + ';';
+        if (context.item) context.src += 'if (typeof result === "undefined") result = ' + context.item + ';';
         context.src += 'return result;';
         var fn = new Function('meta', 'data', context.src).bind(this);
         var ret = fn(meta, data);
@@ -17503,11 +17611,13 @@ $data.EntityState = {
         var memDefs = contextType.memberDefinitions.getPublicMappedProperties();
         for (var i = 0; i < memDefs.length; i++) {
             var memDef = memDefs[i];
-            var memDefType = Container.resolveType(memDef.type);
-            if (memDefType.isAssignableTo && memDefType.isAssignableTo($data.EntitySet)) {
-                var elementType = Container.resolveType(memDef.elementType);
-                if (elementType.name === name) {
-                    return elementType;
+            if (memDef.type) {
+                var memDefType = Container.resolveType(memDef.type);
+                if (memDefType.isAssignableTo && memDefType.isAssignableTo($data.EntitySet)) {
+                    var elementType = Container.resolveType(memDef.elementType);
+                    if (elementType.name === name) {
+                        return elementType;
+                    }
                 }
             }
         }
@@ -18517,7 +18627,14 @@ $data.Class.define('$data.StorageProviderBase', null, null,
         if (Array.isArray(result)) {
             var i = 0;
             for (; i < result.length; i++) {
-                if (result[i].allowedType === 'default' || Container.resolveType(result[i].allowedType) === Container.resolveType(expression.selector.memberDefinition.type)) {
+                if (result[i].allowedType === 'default' || Container.resolveType(result[i].allowedType) === Container.resolveType(expression.selector.memberDefinition.type) &&
+                    (frameType && result[i].allowedIn &&
+                        (
+                            (Array.isArray(result[i].allowedIn) && result[i].allowedIn.some(function(type){ return frameType === Container.resolveType(type); })) ||
+                            (!Array.isArray(result[i].allowedIn) && (frameType === Container.resolveType(result[i].allowedIn)))
+                        )
+                    )
+                    ) {
                     result = result[i];
                     break;
                 }
@@ -18721,18 +18838,18 @@ $data.Class.define('$data.ServiceOperation', null, null, {}, {
                 var context = this;
                 var memberdef;
 
-                var bindedEntity;
+                var boundItem;
                 if (this instanceof $data.Entity || this instanceof $data.EntitySet) {
                     var entitySet;
                     if (this instanceof $data.Entity) {
                         if (this.context) {
                             context = this.context;
                             entitySet = context.getEntitySetFromElementType(this.getType());
-                            if (!cfg.method && cfg.IsSideEffecting !== false) {
-                                cfg.method = 'POST'; //default Action method is POST
-                            }
+                        } else if (this.storeToken && typeof this.storeToken.factory === 'function') {
+                            context = this.storeToken.factory();
+                            entitySet = context.getEntitySetFromElementType(this.getType());
                         } else {
-                            Guard.raise('entity not attached into the context');
+                            Guard.raise(new Exception("entity can't resolve context", 'Not Found!', entity));
                             return;
                         }
                     } else if (this instanceof $data.EntitySet) {
@@ -18744,7 +18861,7 @@ $data.Class.define('$data.ServiceOperation', null, null, {}, {
                     }
 
 
-                    bindedEntity = {
+                    boundItem = {
                         data: this,
                         entitySet: entitySet
                     };
@@ -18756,7 +18873,7 @@ $data.Class.define('$data.ServiceOperation', null, null, {}, {
                 if (cfg.params) {
                     paramConstExpression = [];
                     //object as parameter
-                    if (arguments[0] && typeof arguments[0] === 'object' && cfg.params && cfg.params[0] && ((Container.resolveType(cfg.params[0].type) !== $data.Object || cfg.params[0].name in arguments[0]))) {
+                    if (arguments[0] && typeof arguments[0] === 'object' && arguments[0].constructor === $data.Object && cfg.params && cfg.params[0] && ((Container.resolveType(cfg.params[0].type) !== $data.Object || cfg.params[0].name in arguments[0]))) {
                         var argObj = arguments[0];
                         for (var i = 0; i < cfg.params.length; i++) {
                             var paramConfig = cfg.params[i];
@@ -18781,8 +18898,8 @@ $data.Class.define('$data.ServiceOperation', null, null, {}, {
 
                 var ec = Container.createEntityContextExpression(context);
                 if (!memberdef) {
-                    if (bindedEntity && bindedEntity.data) {
-                        memberdef = bindedEntity.data.getType().getMemberDefinition(cfg.serviceName);
+                    if (boundItem && boundItem.data) {
+                        memberdef = boundItem.data.getType().getMemberDefinition(cfg.serviceName);
                     } else {
                         memberdef = context.getType().getMemberDefinition(cfg.serviceName);
                     }
@@ -18791,11 +18908,11 @@ $data.Class.define('$data.ServiceOperation', null, null, {}, {
                         Container.createMemberInfoExpression(memberdef),
                         paramConstExpression,
                         cfg,
-                        bindedEntity);
+                        boundItem);
 
                 //Get callback function
                 var clb = arguments[arguments.length - 1];
-                if (typeof clb !== 'function') {
+                if (!(typeof clb === 'function' || (typeof clb === 'object' /*&& clb.constructor === $data.Object*/ && (typeof clb.success === 'function' || typeof clb.error === 'function')))) {
                     clb = undefined;
                 }
 
@@ -18834,7 +18951,15 @@ $data.Class.define('$data.ServiceOperation', null, null, {}, {
     }
 });
 
-$data.Class.define('$data.ServiceAction', $data.ServiceOperation, null, {}, {});$data.Base.extend('$data.EntityWrapper', {
+$data.Class.define('$data.ServiceAction', $data.ServiceOperation, null, {}, {
+    generateServiceOperation: function (cfg) {
+        if (!cfg.method) {
+            cfg.method = 'POST'; //default Action method is POST
+        }
+
+        return $data.ServiceOperation.generateServiceOperation.apply(this, arguments);
+    }
+});$data.Base.extend('$data.EntityWrapper', {
     getEntity: function () {
         Guard.raise("pure object");
     }
@@ -18947,7 +19072,10 @@ $C('$data.modelBinder.ModelBinderConfigCompiler', $data.Expressions.EntityExpres
                 if (typeof returnType.isAssignableTo === 'function' && returnType.isAssignableTo($data.Entity)) {
                     builder.modelBinderConfig['$selector'] = ['json:' + expression.cfg.serviceName];
                 } else {
-                    builder.modelBinderConfig['$source'] = expression.cfg.serviceName;
+                    builder.modelBinderConfig['$type'] = returnType;
+                    builder.modelBinderConfig['$value'] = function (a, v) {
+                        return (expression.cfg.serviceName in v) ? v[expression.cfg.serviceName] : v.value;
+                    }
                 }
                 this.VisitExpression(expression, builder);
                 builder.resetModelBinderProperty();
@@ -19099,19 +19227,23 @@ $C('$data.modelBinder.ModelBinderConfigCompiler', $data.Expressions.EntityExpres
             }
         }, this);
     },
-    DefaultSelection: function (builder, type, includes) {
+    DefaultSelection: function (builder, type, allIncludes) {
         //no projection, get all item from entitySet
         builder.modelBinderConfig['$type'] = type;
 
         var storageModel = this._query.context._storageModel.getStorageModel(type);
         this._addPropertyToModelBinderConfig(type, builder);
-        if (includes) {
-            includes.forEach(function (include) {
+        if (allIncludes) {
+            allIncludes.forEach(function (include) {
                 var includes = include.name.split('.');
                 var association = null;
                 var tmpStorageModel = storageModel;
+                var itemCount = 0;
                 for (var i = 0; i < includes.length; i++) {
-                    if (builder.modelBinderConfig.$item) builder.selectModelBinderProperty('$item');
+                    if (builder.modelBinderConfig.$item){
+                        builder.selectModelBinderProperty('$item');
+                        itemCount++;
+                    }
                     builder.selectModelBinderProperty(includes[i]);
                     association = tmpStorageModel.Associations[includes[i]];
                     tmpStorageModel = this._query.context._storageModel.getStorageModel(association.ToType);
@@ -19132,7 +19264,7 @@ $C('$data.modelBinder.ModelBinderConfigCompiler', $data.Expressions.EntityExpres
                     this._addPropertyToModelBinderConfig(include.type, builder);
                 }
 
-                for (var i = 0; i < includes.length; i++) {
+                for (var i = 0; i < includes.length + itemCount; i++) {
                     builder.popModelBinderProperty();
                 }
             }, this);
@@ -19543,7 +19675,7 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
     debugMode: { type: 'bool', value: false },
     xsltRepoUrl: { type: 'string', value: '' },
 
-    createFactoryFunc: function (ctxType, cnf) {
+    createFactoryFunc: function (ctxType, cnf, versionInfo) {
         var self = this;
         return function (config) {
             if (ctxType) {
@@ -19553,7 +19685,8 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
                     //maxDataServiceVersion: '',
                     user: cnf.user,
                     password: cnf.password,
-                    withCredentials: cnf.withCredentials
+                    withCredentials: cnf.withCredentials,
+                    maxDataServiceVersion: versionInfo.maxVersion || '3.0'
                 }, config)
 
 
@@ -19581,7 +19714,7 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
             return;
         }
 
-        var factoryFn = self.createFactoryFunc(ctxType, cnf);
+        var factoryFn = self.createFactoryFunc(ctxType, cnf, versionInfo);
         this.factoryCache[cnf.url] = [factoryFn, ctxType];
 
         factoryFn.type = ctxType;
@@ -19647,7 +19780,7 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
                     xslproc.addParameter('EntitySetBaseClass', cnf.EntitySetBaseClass);
                     xslproc.addParameter('CollectionBaseClass', cnf.CollectionBaseClass);
                     xslproc.addParameter('DefaultNamespace', cnf.DefaultNamespace);
-
+                    xslproc.addParameter('MaxDataserviceVersion', versionInfo.maxVersion || '3.0');
 
                     xslproc.transform();
                     return xslproc.output;
@@ -19673,6 +19806,7 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
             xsltProcessor.setParameter(null, 'EntitySetBaseClass', cnf.EntitySetBaseClass);
             xsltProcessor.setParameter(null, 'CollectionBaseClass', cnf.CollectionBaseClass);
             xsltProcessor.setParameter(null, 'DefaultNamespace', cnf.DefaultNamespace);
+            xsltProcessor.setParameter(null, 'MaxDataserviceVersion', versionInfo.maxVersion || '3.0');
             resultDocument = xsltProcessor.transformToFragment(metadata, document);
 
             return resultDocument.textContent;
@@ -19687,11 +19821,14 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
                 'ContextInstanceName', "'" + cnf.ContextInstanceName + "'",
                 'EntitySetBaseClass', "'" + cnf.EntitySetBaseClass + "'",
                 'CollectionBaseClass', "'" + cnf.CollectionBaseClass + "'",
-                'DefaultNamespace', "'" + cnf.DefaultNamespace + "'"
+                'DefaultNamespace', "'" + cnf.DefaultNamespace + "'",
+                'MaxDataserviceVersion', "'" + (versionInfo.maxVersion || '3.0') + "'"
             ]);
         }
     },
     _findVersion: function (metadata) {
+        var maxDSVersion = '';
+
         if (typeof metadata === 'object' && "getElementsByTagName" in metadata){
             var version = 'http://schemas.microsoft.com/ado/2008/09/edm';
             var item = metadata.getElementsByTagName('Schema');
@@ -19704,10 +19841,18 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
             if (item)
                 version = item.value;
 
+            var maxDSVersion = metadata.getElementsByTagName('edmx:DataServices')[0] || metadata.getElementsByTagName('DataServices')[0];
+            if (maxDSVersion)
+                maxDSVersion = maxDSVersion.attributes.getNamedItem('m:MaxDataServiceVersion');
+            if (maxDSVersion && version)
+                maxDSVersion = maxDSVersion.value;
+
+
             var versionNum = this._supportedODataVersions[version];
             return {
                 ns: version,
-                version: versionNum || 'unknown'
+                version: versionNum || 'unknown',
+                maxVersion: maxDSVersion || this._maxDataServiceVersions[version || 'unknown']
             };
         }else if (typeof module !== 'undefined' && typeof require !== 'undefined'){
             var schemaXml = metadata;
@@ -19724,7 +19869,8 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
 
             return {
                 ns: schemaNamespace,
-                version: version
+                version: version,
+                maxVersion: this._maxDataServiceVersions[version || 'unknown']
             }
         }
     },
@@ -19733,7 +19879,17 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
             "http://schemas.microsoft.com/ado/2006/04/edm": "V1",
             "http://schemas.microsoft.com/ado/2008/09/edm": "V2",
             "http://schemas.microsoft.com/ado/2009/11/edm": "V3",
-            "http://schemas.microsoft.com/ado/2007/05/edm": "V11"
+            "http://schemas.microsoft.com/ado/2007/05/edm": "V11",
+            "http://schemas.microsoft.com/ado/2009/08/edm": "V22"
+        }
+    },
+    _maxDataServiceVersions: {
+        value: {
+            "http://schemas.microsoft.com/ado/2006/04/edm": "1.0",
+            "http://schemas.microsoft.com/ado/2008/09/edm": "2.0",
+            "http://schemas.microsoft.com/ado/2009/11/edm": "3.0",
+            "http://schemas.microsoft.com/ado/2007/05/edm": "1.0",
+            "http://schemas.microsoft.com/ado/2009/08/edm": "2.0"
         }
     },
     _supportedODataVersionXSLT: {
@@ -19786,349 +19942,359 @@ $data.Class.define('$data.MetadataLoaderClass', null, null, {
     _metadataConverterXSLT: {
         type: 'string',
         value:
-            "<xsl:stylesheet version=\"1.0\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" \r\n" + 
-            "                xmlns:edm=\"@@VERSIONNS@@\" \r\n" + 
-            "                xmlns:m=\"http://schemas.microsoft.com/ado/2007/08/dataservices/metadata\" \r\n" + 
-            "                xmlns:metadata=\"http://schemas.microsoft.com/ado/2007/08/dataservices/metadata\" \r\n" + 
-            "                xmlns:annot=\"http://schemas.microsoft.com/ado/2009/02/edm/annotation\" \r\n" + 
-            "                xmlns:exsl=\"http://exslt.org/common\" \r\n" + 
-            "                xmlns:msxsl=\"urn:schemas-microsoft-com:xslt\" exclude-result-prefixes=\"msxsl\">\r\n" + 
-            "\r\n" + 
-            "  <xsl:key name=\"entityType\" match=\"edm:EntityType\" use=\"concat(string(../@Namespace),'.', string(@Name))\"/>\r\n" + 
-            "  <xsl:key name=\"associations\" match=\"edm:Association\" use=\"concat(string(../@Namespace),'.', string(@Name))\"/>\r\n" + 
-            "\r\n" + 
-            "  <xsl:strip-space elements=\"property item unprocessed\"/>\r\n" + 
-            "  <xsl:output method=\"text\" indent=\"no\"  />\r\n" + 
-            "  <xsl:param name=\"contextNamespace\" />\r\n" + 
-            "\r\n" + 
-            "  <xsl:param name=\"SerivceUri\" />\r\n" + 
-            "  <xsl:param name=\"EntityBaseClass\"/>\r\n" + 
-            "  <xsl:param name=\"ContextBaseClass\"/>\r\n" + 
-            "  <xsl:param name=\"AutoCreateContext\"/>\r\n" + 
-            "  <xsl:param name=\"ContextInstanceName\"/>\r\n" + 
-            "  <xsl:param name=\"EntitySetBaseClass\"/>\r\n" + 
-            "  <xsl:param name=\"CollectionBaseClass\"/>\r\n" + 
-            "  <xsl:param name=\"DefaultNamespace\"/>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"/\">\r\n" + 
-            "\r\n" + 
-            "/*//////////////////////////////////////////////////////////////////////////////////////\r\n" + 
-            "////// Autogenerated by JaySvcUtil.exe http://JayData.org for more info        /////////\r\n" + 
-            "//////                             oData @@VERSION@@                                    /////////\r\n" + 
-            "//////////////////////////////////////////////////////////////////////////////////////*/\r\n" + 
-            "(function(global, $data, undefined) {\r\n" + 
-            "\r\n" + 
-            "<xsl:for-each select=\"//edm:EntityType | //edm:ComplexType\" xml:space=\"default\">\r\n" + 
-            "  <xsl:message terminate=\"no\">Info: generating type <xsl:value-of select=\"concat(../@Namespace, '.', @Name)\"/>\r\n" + 
-            "</xsl:message>\r\n" + 
-            "  <xsl:variable name=\"props\">\r\n" + 
-            "    <xsl:apply-templates select=\"*\" />\r\n" + 
-            "  </xsl:variable>\r\n" + 
-            "  <xsl:text xml:space=\"preserve\">  </xsl:text><xsl:value-of select=\"$EntityBaseClass\"  />.extend('<xsl:value-of select=\"concat($DefaultNamespace,../@Namespace)\"/>.<xsl:value-of select=\"@Name\"/>', {\r\n" + 
-            "    <xsl:choose><xsl:when test=\"function-available('msxsl:node-set')\">\r\n" + 
-            "    <xsl:for-each select=\"msxsl:node-set($props)/*\">\r\n" + 
-            "      <xsl:value-of select=\".\"/><xsl:if test=\"position() != last()\">,\r\n" + 
-            "    </xsl:if></xsl:for-each>\r\n" + 
-            "  </xsl:when>\r\n" + 
-            "  <xsl:otherwise>\r\n" + 
-            "    <xsl:for-each select=\"exsl:node-set($props)/*\">\r\n" + 
-            "      <xsl:value-of select=\".\"/><xsl:if test=\"position() != last()\">,\r\n" + 
-            "    </xsl:if></xsl:for-each>\r\n" + 
-            "    </xsl:otherwise>\r\n" + 
-            "    </xsl:choose>\r\n" + 
-            "    <xsl:variable name=\"currentName\"><xsl:value-of select=\"concat(../@Namespace,'.',@Name)\"/></xsl:variable>\r\n" + 
-            "    <xsl:for-each select=\"//edm:FunctionImport[@IsBindable and edm:Parameter[1]/@Type = $currentName]\"><xsl:if test=\"position() = 1\">,\r\n" + 
-            "    </xsl:if>\r\n" + 
-            "      <xsl:apply-templates select=\".\"></xsl:apply-templates><xsl:if test=\"position() != last()\">,\r\n" + 
-            "    </xsl:if>\r\n" + 
-            "    </xsl:for-each>\r\n" + 
-            "  });\r\n" + 
-            "  \r\n" + 
-            "</xsl:for-each>\r\n" + 
-            "\r\n" + 
-            "<xsl:for-each select=\"//edm:EntityContainer\">\r\n" + 
-            "  <xsl:text xml:space=\"preserve\">  </xsl:text><xsl:value-of select=\"$ContextBaseClass\"  />.extend('<xsl:value-of select=\"concat(concat($DefaultNamespace,../@Namespace), '.', @Name)\"/>', {\r\n" + 
-            "    <!--or (@IsBindable = 'true' and (@IsAlwaysBindable = 'false' or @m:IsAlwaysBindable = 'false' or @metadata:IsAlwaysBindable = 'false'))-->\r\n" + 
-            "    <xsl:for-each select=\"edm:EntitySet | edm:FunctionImport[not(@IsBindable) or @IsBindable = 'false']\">\r\n" + 
-            "      <xsl:apply-templates select=\".\"></xsl:apply-templates><xsl:if test=\"position() != last()\">,\r\n" + 
-            "    </xsl:if>\r\n" + 
-            "    </xsl:for-each>\r\n" + 
-            "  });\r\n" + 
-            "\r\n" + 
-            "  $data.generatedContexts = $data.generatedContexts || [];\r\n" + 
-            "  $data.generatedContexts.push(<xsl:value-of select=\"concat(concat($DefaultNamespace,../@Namespace), '.', @Name)\" />);\r\n" + 
-            "  <xsl:if test=\"$AutoCreateContext = 'true'\">\r\n" + 
-            "  /*Context Instance*/\r\n" + 
-            "  <xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"$ContextInstanceName\" /> = new <xsl:value-of select=\"concat(concat($DefaultNamespace,../@Namespace), '.', @Name)\" />({ name:'oData', oDataServiceHost: '<xsl:value-of select=\"$SerivceUri\" />' });\r\n" + 
-            "</xsl:if>\r\n" + 
-            "\r\n" + 
-            "</xsl:for-each>\r\n" + 
-            "      \r\n" + 
-            "})(window, $data);\r\n" + 
-            "      \r\n" + 
-            "    </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"edm:Key\"></xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"edm:FunctionImport\">\r\n" + 
-            "    <xsl:text>'</xsl:text>\r\n" + 
-            "    <xsl:value-of select=\"@Name\"/>\r\n" + 
-            "    <xsl:text>': { type: </xsl:text>\r\n" + 
-            "    <xsl:choose>\r\n" + 
-            "      <xsl:when test=\"@IsBindable = 'true'\">\r\n" + 
-            "        <xsl:text>$data.ServiceAction</xsl:text>\r\n" + 
-            "      </xsl:when>\r\n" + 
-            "      <xsl:otherwise>\r\n" + 
-            "        <xsl:text>$data.ServiceOperation</xsl:text>\r\n" + 
-            "      </xsl:otherwise>\r\n" + 
-            "    </xsl:choose>\r\n" + 
-            "\r\n" + 
-            "    <xsl:apply-templates select=\"@*\" mode=\"FunctionImport-mode\"/>\r\n" + 
-            "\r\n" + 
-            "    <xsl:variable name=\"IsBindable\">\r\n" + 
-            "      <xsl:value-of select=\"@IsBindable\"/>\r\n" + 
-            "    </xsl:variable>\r\n" + 
-            "    <xsl:text>, params: [</xsl:text>\r\n" + 
-            "    <xsl:for-each select=\"edm:Parameter[($IsBindable = 'true' and position() > 1) or (($IsBindable = 'false' or $IsBindable = '') and position() > 0)]\">\r\n" + 
-            "      <xsl:text>{ name: '</xsl:text>\r\n" + 
-            "      <xsl:value-of select=\"@Name\"/>\r\n" + 
-            "      <xsl:text>', type: '</xsl:text>\r\n" + 
-            "      <xsl:apply-templates select=\"@Type\" mode=\"render-functionImport-type\" />\r\n" + 
-            "      <xsl:text>' }</xsl:text>\r\n" + 
-            "      <xsl:if test=\"position() != last()\">, </xsl:if>\r\n" + 
-            "    </xsl:for-each>    \r\n" + 
-            "    <xsl:text>]</xsl:text>\r\n" + 
-            "\r\n" + 
-            "    <xsl:text> }</xsl:text>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "  \r\n" + 
-            "  <xsl:template match=\"@ReturnType\" mode=\"FunctionImport-mode\">\r\n" + 
-            "    <xsl:text>, returnType: </xsl:text>\r\n" + 
-            "    <xsl:choose>\r\n" + 
-            "      <xsl:when test=\"not(.)\">null</xsl:when>\r\n" + 
-            "      <xsl:when test=\"starts-with(., 'Collection')\">$data.Queryable</xsl:when>\r\n" + 
-            "      <xsl:otherwise>\r\n" + 
-            "        <xsl:text>'</xsl:text>\r\n" + 
-            "        <xsl:apply-templates select=\".\" mode=\"render-functionImport-type\" />\r\n" + 
-            "        <xsl:text>'</xsl:text>\r\n" + 
-            "      </xsl:otherwise>\r\n" + 
-            "    </xsl:choose>\r\n" + 
-            "\r\n" + 
-            "    <xsl:if test=\"starts-with(., 'Collection')\">\r\n" + 
-            "      <xsl:variable name=\"len\" select=\"string-length(.)-12\"/>\r\n" + 
-            "      <xsl:variable name=\"curr\" select=\"substring(.,12,$len)\"/>\r\n" + 
-            "      <xsl:variable name=\"ElementType\" >\r\n" + 
-            "        <xsl:choose>\r\n" + 
-            "          <xsl:when test=\"//edm:Schema[starts-with($curr, @Namespace)]\">\r\n" + 
-            "            <xsl:value-of select=\"concat($DefaultNamespace,$curr)\" />\r\n" + 
-            "          </xsl:when>\r\n" + 
-            "          <xsl:otherwise>\r\n" + 
-            "            <xsl:value-of select=\"$curr\" />\r\n" + 
-            "          </xsl:otherwise>\r\n" + 
-            "        </xsl:choose>\r\n" + 
-            "      </xsl:variable>\r\n" + 
-            "      <xsl:text>, elementType: '</xsl:text>\r\n" + 
-            "      <xsl:value-of select=\"$ElementType\"/>\r\n" + 
-            "      <xsl:text>'</xsl:text>\r\n" + 
-            "    </xsl:if>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "  <xsl:template match=\"@Name\" mode=\"FunctionImport-mode\"></xsl:template>\r\n" + 
-            "  <xsl:template match=\"@m:HttpMethod\" mode=\"FunctionImport-mode\">\r\n" + 
-            "    <xsl:text>, method: '</xsl:text>\r\n" + 
-            "    <xsl:value-of select=\".\"/>\r\n" + 
-            "    <xsl:text>'</xsl:text>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "  <xsl:template match=\"@IsBindable | @IsSideEffecting | @IsAlwaysBindable | @m:IsAlwaysBindable | @metadata:IsAlwaysBindable | @IsComposable\" mode=\"FunctionImport-mode\">\r\n" + 
-            "    <xsl:text>, </xsl:text>\r\n" + 
-            "    <xsl:call-template name=\"GetAttributeName\">\r\n" + 
-            "      <xsl:with-param name=\"Name\" select=\"name()\" />\r\n" + 
-            "    </xsl:call-template>\r\n" + 
-            "    <xsl:text>: </xsl:text>\r\n" + 
-            "    <xsl:value-of select=\".\"/>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "  <xsl:template match=\"@*\" mode=\"FunctionImport-mode\">\r\n" + 
-            "    <xsl:text>, '</xsl:text>\r\n" + 
-            "    <xsl:call-template name=\"GetAttributeName\">\r\n" + 
-            "      <xsl:with-param name=\"Name\" select=\"name()\" />\r\n" + 
-            "    </xsl:call-template>\r\n" + 
-            "    <xsl:text>': '</xsl:text>\r\n" + 
-            "    <xsl:value-of select=\".\"/>        \r\n" + 
-            "    <xsl:text>'</xsl:text>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "  <xsl:template name=\"GetAttributeName\">\r\n" + 
-            "    <xsl:param name=\"Name\" />\r\n" + 
-            "    <xsl:choose>\r\n" + 
-            "      <xsl:when test=\"contains($Name, ':')\">\r\n" + 
-            "        <xsl:value-of select=\"substring-after($Name, ':')\"/>\r\n" + 
-            "      </xsl:when>\r\n" + 
-            "      <xsl:otherwise>\r\n" + 
-            "        <xsl:value-of select=\"$Name\"/>\r\n" + 
-            "      </xsl:otherwise>\r\n" + 
-            "    </xsl:choose>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"edm:EntitySet\">'<xsl:value-of select=\"@Name\"/>': { type: <xsl:value-of select=\"$EntitySetBaseClass\"  />, elementType: <xsl:value-of select=\"concat($DefaultNamespace,@EntityType)\"/><xsl:text> </xsl:text><xsl:apply-templates select=\".\" mode=\"Collection-Actions\" />}</xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"edm:EntitySet\" mode=\"Collection-Actions\">\r\n" + 
-            "    <xsl:variable name=\"CollectionType\" select=\"concat('Collection(', @EntityType, ')')\" />\r\n" + 
-            "    <xsl:for-each select=\"//edm:FunctionImport[edm:Parameter[1]/@Type = $CollectionType]\">\r\n" + 
-            "      <xsl:if test=\"position() = 1\">\r\n" + 
-            "        <xsl:text>, actions: { \r\n" + 
-            "        </xsl:text>\r\n" + 
-            "      </xsl:if>\r\n" + 
-            "        <xsl:apply-templates select=\".\"></xsl:apply-templates><xsl:if test=\"position() != last()\">,\r\n" + 
-            "        </xsl:if>\r\n" + 
-            "      <xsl:if test=\"position() = last()\">\r\n" + 
-            "        <xsl:text>\r\n" + 
-            "      }</xsl:text>\r\n" + 
-            "      </xsl:if>\r\n" + 
-            "    </xsl:for-each>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "  \r\n" + 
-            "  <xsl:template match=\"edm:Property | edm:NavigationProperty\">\r\n" + 
-            "    <property>\r\n" + 
-            "    <xsl:variable name=\"memberDefinition\">\r\n" + 
-            "      <xsl:if test=\"parent::edm:EntityType/edm:Key/edm:PropertyRef[@Name = current()/@Name]\"><attribute name=\"key\">true</attribute></xsl:if>\r\n" + 
-            "      <xsl:apply-templates select=\"@*[local-name() != 'Name']\" mode=\"render-field\" />\r\n" + 
-            "    </xsl:variable>'<xsl:value-of select=\"@Name\"/>': { <xsl:choose><xsl:when test=\"function-available('msxsl:node-set')\"><xsl:for-each select=\"msxsl:node-set($memberDefinition)/*\">'<xsl:if test=\"@extended = 'true'\">$</xsl:if><xsl:value-of select=\"@name\"/>':<xsl:value-of select=\".\"/>\r\n" + 
-            "      <xsl:if test=\"position() != last()\">,<xsl:text> </xsl:text>\r\n" + 
-            "    </xsl:if> </xsl:for-each></xsl:when>\r\n" + 
-            "  <xsl:otherwise><xsl:for-each select=\"exsl:node-set($memberDefinition)/*\">'<xsl:if test=\"@extended = 'true'\">$</xsl:if><xsl:value-of select=\"@name\"/>':<xsl:value-of select=\".\"/>\r\n" + 
-            "      <xsl:if test=\"position() != last()\">,<xsl:text> </xsl:text>\r\n" + 
-            "    </xsl:if> </xsl:for-each></xsl:otherwise>\r\n" + 
-            "    </xsl:choose> }</property>\r\n" + 
-            "</xsl:template>\r\n" + 
-            "  \r\n" + 
-            "  <xsl:template match=\"@Name\" mode=\"render-field\">\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"@Type\" mode=\"render-field\">\r\n" + 
-            "    <xsl:choose>\r\n" + 
-            "      <xsl:when test=\"starts-with(., 'Collection')\">\r\n" + 
-            "        <attribute name=\"type\">'Array'</attribute>\r\n" + 
-            "        <xsl:variable name=\"len\" select=\"string-length(.)-12\"/>\r\n" + 
-            "        <xsl:choose>\r\n" + 
-            "          <xsl:when test=\"starts-with(., ../../../@Namespace)\">\r\n" + 
-            "            <attribute name=\"elementType\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"substring(.,12,$len)\" />'</attribute>\r\n" + 
-            "          </xsl:when>\r\n" + 
-            "          <xsl:otherwise>\r\n" + 
-            "            <attribute name=\"elementType\">'<xsl:value-of select=\"substring(.,12,$len)\" />'</attribute>\r\n" + 
-            "          </xsl:otherwise>\r\n" + 
-            "        </xsl:choose>\r\n" + 
-            "      </xsl:when>\r\n" + 
-            "      <xsl:when test=\"starts-with(., ../../../@Namespace)\">\r\n" + 
-            "        <attribute name=\"type\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\".\"/>'</attribute>\r\n" + 
-            "      </xsl:when>\r\n" + 
-            "      <xsl:otherwise>\r\n" + 
-            "        <attribute name=\"type\">'<xsl:value-of select=\".\"/>'</attribute>\r\n" + 
-            "      </xsl:otherwise>\r\n" + 
-            "    </xsl:choose>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"@ConcurrencyMode\" mode=\"render-field\">\r\n" + 
-            "    <attribute name=\"concurrencyMode\">$data.ConcurrencyMode.<xsl:value-of select=\".\"/></attribute>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"@Nullable\" mode=\"render-field\">\r\n" + 
-            "    <attribute name=\"nullable\"><xsl:value-of select=\".\"/></attribute>\r\n" + 
-            "    \r\n" + 
-            "    <xsl:if test=\". = 'false'\">\r\n" + 
-            "      <xsl:choose>\r\n" + 
-            "        <xsl:when test=\"parent::edm:Property/@annot:StoreGeneratedPattern = 'Identity' or parent::edm:Property/@annot:StoreGeneratedPattern = 'Computed'\"></xsl:when>\r\n" + 
-            "        <xsl:otherwise><attribute name=\"required\">true</attribute></xsl:otherwise>\r\n" + 
-            "      </xsl:choose>\r\n" + 
-            "    </xsl:if>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"@annot:StoreGeneratedPattern\" mode=\"render-field\">\r\n" + 
-            "    <xsl:if test=\". != 'None'\"><attribute name=\"computed\">true</attribute></xsl:if>    \r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"@MaxLength\" mode=\"render-field\">\r\n" + 
-            "    <attribute name=\"maxLength\">\r\n" + 
-            "      <xsl:choose>\r\n" + 
-            "        <xsl:when test=\"string(.) = 'Max'\">Number.POSITIVE_INFINITY</xsl:when>\r\n" + 
-            "        <xsl:otherwise>\r\n" + 
-            "          <xsl:value-of select=\".\"/>\r\n" + 
-            "        </xsl:otherwise>\r\n" + 
-            "      </xsl:choose>\r\n" + 
-            "    </attribute>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"@FixedLength | @Unicode | @Precision | @Scale\" mode=\"render-field\">\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "  <xsl:template match=\"@*\" mode=\"render-field\">\r\n" + 
-            "    <xsl:variable name=\"nameProp\">\r\n" + 
-            "      <xsl:choose>\r\n" + 
-            "        <xsl:when test=\"substring-after(name(), ':') != ''\">\r\n" + 
-            "          <xsl:value-of select=\"substring-after(name(), ':')\"/>\r\n" + 
-            "        </xsl:when>\r\n" + 
-            "        <xsl:otherwise>\r\n" + 
-            "          <xsl:value-of select=\"name()\"/>\r\n" + 
-            "        </xsl:otherwise>\r\n" + 
-            "      </xsl:choose>\r\n" + 
-            "    </xsl:variable>\r\n" + 
-            "    <xsl:element name=\"attribute\"><xsl:attribute name=\"extended\">true</xsl:attribute><xsl:attribute name=\"name\"><xsl:value-of select=\"$nameProp\"/></xsl:attribute>'<xsl:value-of select=\".\"/>'</xsl:element>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"@Relationship\" mode=\"render-field\">\r\n" + 
-            "    <xsl:variable name=\"relationName\" select=\"string(../@ToRole)\"/>\r\n" + 
-            "    <xsl:variable name=\"relationshipName\" select=\"string(.)\" />\r\n" + 
-            "    <xsl:variable name=\"relation\" select=\"key('associations',string(.))/edm:End[@Role = $relationName]\" />\r\n" + 
-            "    <xsl:variable name=\"otherName\" select=\"../@FromRole\" />\r\n" + 
-            "    <xsl:variable name=\"otherProp\" select=\"//edm:NavigationProperty[@ToRole = $otherName and @Relationship = $relationshipName]\" />\r\n" + 
-            "    <xsl:variable name=\"m\" select=\"$relation/@Multiplicity\" />\r\n" + 
-            "    <xsl:choose>\r\n" + 
-            "      <xsl:when test=\"$m = '*'\">\r\n" + 
-            "        <attribute name=\"type\">'<xsl:value-of select=\"$CollectionBaseClass\"/>'</attribute>\r\n" + 
-            "        <attribute name=\"elementType\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"$relation/@Type\"/>'</attribute>\r\n" + 
-            "        <xsl:if test=\"not($otherProp/@Name)\">\r\n" + 
-            "          <attribute name=\"inverseProperty\">'$$unbound'</attribute></xsl:if>\r\n" + 
-            "        <xsl:if test=\"$otherProp/@Name\">\r\n" + 
-            "          <attribute name=\"inverseProperty\">'<xsl:value-of select=\"$otherProp/@Name\"/>'</attribute></xsl:if>\r\n" + 
-            "      </xsl:when>\r\n" + 
-            "      <xsl:when test=\"$m = '0..1'\">\r\n" + 
-            "        <attribute name=\"type\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"$relation/@Type\"/>'</attribute>\r\n" + 
-            "        <xsl:choose>\r\n" + 
-            "          <xsl:when test=\"$otherProp\">\r\n" + 
-            "            <attribute name=\"inverseProperty\">'<xsl:value-of select=\"$otherProp/@Name\"/>'</attribute>\r\n" + 
-            "          </xsl:when >\r\n" + 
-            "          <xsl:otherwise>\r\n" + 
-            "            <attribute name=\"inverseProperty\">'$$unbound'</attribute>\r\n" + 
-            "            <xsl:message terminate=\"no\">  Warning: inverseProperty other side missing: <xsl:value-of select=\".\"/>\r\n" + 
-            "          </xsl:message>\r\n" + 
-            "          </xsl:otherwise>\r\n" + 
-            "        </xsl:choose>\r\n" + 
-            "      </xsl:when>\r\n" + 
-            "      <xsl:when test=\"$m = '1'\">\r\n" + 
-            "        <attribute name=\"type\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"$relation/@Type\"/>'</attribute>\r\n" + 
-            "        <attribute name=\"required\">true</attribute>\r\n" + 
-            "        <xsl:choose>\r\n" + 
-            "          <xsl:when test=\"$otherProp\">\r\n" + 
-            "            <attribute name=\"inverseProperty\">'<xsl:value-of select=\"$otherProp/@Name\"/>'</attribute>\r\n" + 
-            "          </xsl:when >\r\n" + 
-            "          <xsl:otherwise>\r\n" + 
-            "            <attribute name=\"inverseProperty\">'$$unbound'</attribute>\r\n" + 
-            "            <xsl:message terminate=\"no\">\r\n" + 
-            "              Warning: inverseProperty other side missing: <xsl:value-of select=\".\"/>\r\n" + 
-            "            </xsl:message>\r\n" + 
-            "          </xsl:otherwise>\r\n" + 
-            "        </xsl:choose>\r\n" + 
-            "      </xsl:when>\r\n" + 
-            "    </xsl:choose>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"@FromRole | @ToRole\" mode=\"render-field\"></xsl:template>\r\n" + 
-            "\r\n" + 
-            "  <xsl:template match=\"*\" mode=\"render-field\">\r\n" + 
-            "    <!--<unprocessed>!!<xsl:value-of select=\"name()\"/>!!</unprocessed>-->\r\n" + 
-            "    <xsl:message terminate=\"no\">  Warning: <xsl:value-of select=\"../../@Name\"/>.<xsl:value-of select=\"../@Name\"/>:<xsl:value-of select=\"name()\"/> is an unknown/unprocessed attribued</xsl:message>\r\n" + 
-            "  </xsl:template>\r\n" + 
-            "  <!--<xsl:template match=\"*\">\r\n" + 
-            "    !<xsl:value-of select=\"name()\"/>!\r\n" + 
-            "  </xsl:template>-->\r\n" + 
-            "</xsl:stylesheet>\r\n"
+            "<xsl:stylesheet version=\"1.0\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" \r\n" +
+            "                xmlns:edm=\"@@VERSIONNS@@\" \r\n" +
+            "                xmlns:m=\"http://schemas.microsoft.com/ado/2007/08/dataservices/metadata\" \r\n" +
+            "                xmlns:metadata=\"http://schemas.microsoft.com/ado/2007/08/dataservices/metadata\" \r\n" +
+            "                xmlns:annot=\"http://schemas.microsoft.com/ado/2009/02/edm/annotation\" \r\n" +
+            "                xmlns:exsl=\"http://exslt.org/common\" \r\n" +
+            "                xmlns:msxsl=\"urn:schemas-microsoft-com:xslt\" exclude-result-prefixes=\"msxsl\">\r\n" +
+            "\r\n" +
+            "  <xsl:key name=\"entityType\" match=\"edm:EntityType\" use=\"concat(string(../@Namespace),'.', string(@Name))\"/>\r\n" +
+            "  <xsl:key name=\"associations\" match=\"edm:Association\" use=\"concat(string(../@Namespace),'.', string(@Name))\"/>\r\n" +
+            "\r\n" +
+            "  <xsl:strip-space elements=\"property item unprocessed\"/>\r\n" +
+            "  <xsl:output method=\"text\" indent=\"no\"  />\r\n" +
+            "  <xsl:param name=\"contextNamespace\" />\r\n" +
+            "\r\n" +
+            "  <xsl:param name=\"SerivceUri\" />\r\n" +
+            "  <xsl:param name=\"EntityBaseClass\"/>\r\n" +
+            "  <xsl:param name=\"ContextBaseClass\"/>\r\n" +
+            "  <xsl:param name=\"AutoCreateContext\"/>\r\n" +
+            "  <xsl:param name=\"ContextInstanceName\"/>\r\n" +
+            "  <xsl:param name=\"EntitySetBaseClass\"/>\r\n" +
+            "  <xsl:param name=\"CollectionBaseClass\"/>\r\n" +
+            "  <xsl:param name=\"DefaultNamespace\"/>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"/\">\r\n" +
+            "\r\n" +
+            "/*//////////////////////////////////////////////////////////////////////////////////////\r\n" +
+            "////// Autogenerated by JaySvcUtil.exe http://JayData.org for more info        /////////\r\n" +
+            "//////                             oData @@VERSION@@                                    /////////\r\n" +
+            "//////////////////////////////////////////////////////////////////////////////////////*/\r\n" +
+            "(function(global, $data, undefined) {\r\n" +
+            "\r\n" +
+            "<xsl:for-each select=\"//edm:EntityType | //edm:ComplexType\" xml:space=\"default\">\r\n" +
+            "  <xsl:message terminate=\"no\">Info: generating type <xsl:value-of select=\"concat(../@Namespace, '.', @Name)\"/>\r\n" +
+            "</xsl:message>\r\n" +
+            "  <xsl:variable name=\"BaseType\">\r\n" +
+            "    <xsl:choose>\r\n" +
+            "      <xsl:when test=\"@BaseType\">\r\n" +
+            "        <xsl:value-of select=\"@BaseType\"/>\r\n" +
+            "      </xsl:when>\r\n" +
+            "      <xsl:otherwise>\r\n" +
+            "        <xsl:value-of select=\"$EntityBaseClass\"  />\r\n" +
+            "      </xsl:otherwise>\r\n" +
+            "    </xsl:choose>\r\n" +
+            "  </xsl:variable>\r\n" +
+            "  <xsl:variable name=\"props\">\r\n" +
+            "    <xsl:apply-templates select=\"*\" />\r\n" +
+            "  </xsl:variable>\r\n" +
+            "  <xsl:text xml:space=\"preserve\">  </xsl:text><xsl:value-of select=\"$BaseType\"  />.extend('<xsl:value-of select=\"concat($DefaultNamespace,../@Namespace)\"/>.<xsl:value-of select=\"@Name\"/>', {\r\n" +
+            "    <xsl:choose><xsl:when test=\"function-available('msxsl:node-set')\">\r\n" +
+            "    <xsl:for-each select=\"msxsl:node-set($props)/*\">\r\n" +
+            "      <xsl:value-of select=\".\"/><xsl:if test=\"position() != last()\">,\r\n" +
+            "    </xsl:if></xsl:for-each>\r\n" +
+            "  </xsl:when>\r\n" +
+            "  <xsl:otherwise>\r\n" +
+            "    <xsl:for-each select=\"exsl:node-set($props)/*\">\r\n" +
+            "      <xsl:value-of select=\".\"/><xsl:if test=\"position() != last()\">,\r\n" +
+            "    </xsl:if></xsl:for-each>\r\n" +
+            "    </xsl:otherwise>\r\n" +
+            "    </xsl:choose>\r\n" +
+            "    <xsl:variable name=\"currentName\"><xsl:value-of select=\"concat(../@Namespace,'.',@Name)\"/></xsl:variable>\r\n" +
+            "    <xsl:for-each select=\"//edm:FunctionImport[@IsBindable and edm:Parameter[1]/@Type = $currentName]\"><xsl:if test=\"position() = 1\">,\r\n" +
+            "    </xsl:if>\r\n" +
+            "      <xsl:apply-templates select=\".\"></xsl:apply-templates><xsl:if test=\"position() != last()\">,\r\n" +
+            "    </xsl:if>\r\n" +
+            "    </xsl:for-each>\r\n" +
+            "  });\r\n" +
+            "  \r\n" +
+            "</xsl:for-each>\r\n" +
+            "\r\n" +
+            "<xsl:for-each select=\"//edm:EntityContainer\">\r\n" +
+            "  <xsl:text xml:space=\"preserve\">  </xsl:text><xsl:value-of select=\"$ContextBaseClass\"  />.extend('<xsl:value-of select=\"concat(concat($DefaultNamespace,../@Namespace), '.', @Name)\"/>', {\r\n" +
+            "    <!--or (@IsBindable = 'true' and (@IsAlwaysBindable = 'false' or @m:IsAlwaysBindable = 'false' or @metadata:IsAlwaysBindable = 'false'))-->\r\n" +
+            "    <xsl:for-each select=\"edm:EntitySet | edm:FunctionImport[not(@IsBindable) or @IsBindable = 'false']\">\r\n" +
+            "      <xsl:apply-templates select=\".\"></xsl:apply-templates><xsl:if test=\"position() != last()\">,\r\n" +
+            "    </xsl:if>\r\n" +
+            "    </xsl:for-each>\r\n" +
+            "  });\r\n" +
+            "\r\n" +
+            "  $data.generatedContexts = $data.generatedContexts || [];\r\n" +
+            "  $data.generatedContexts.push(<xsl:value-of select=\"concat(concat($DefaultNamespace,../@Namespace), '.', @Name)\" />);\r\n" +
+            "  <xsl:if test=\"$AutoCreateContext = 'true'\">\r\n" +
+            "  /*Context Instance*/\r\n" +
+            "  <xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"$ContextInstanceName\" /> = new <xsl:value-of select=\"concat(concat($DefaultNamespace,../@Namespace), '.', @Name)\" />({ name:'oData', oDataServiceHost: '<xsl:value-of select=\"$SerivceUri\" />' });\r\n" +
+            "</xsl:if>\r\n" +
+            "\r\n" +
+            "</xsl:for-each>\r\n" +
+            "      \r\n" +
+            "})(window, $data);\r\n" +
+            "      \r\n" +
+            "    </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"edm:Key\"></xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"edm:FunctionImport\">\r\n" +
+            "    <xsl:text>'</xsl:text>\r\n" +
+            "    <xsl:value-of select=\"@Name\"/>\r\n" +
+            "    <xsl:text>': { type: </xsl:text>\r\n" +
+            "    <xsl:choose>\r\n" +
+            "      <xsl:when test=\"@IsBindable = 'true'\">\r\n" +
+            "        <xsl:text>$data.ServiceAction</xsl:text>\r\n" +
+            "      </xsl:when>\r\n" +
+            "      <xsl:otherwise>\r\n" +
+            "        <xsl:text>$data.ServiceOperation</xsl:text>\r\n" +
+            "      </xsl:otherwise>\r\n" +
+            "    </xsl:choose>\r\n" +
+            "\r\n" +
+            "    <xsl:apply-templates select=\"@*\" mode=\"FunctionImport-mode\"/>\r\n" +
+            "\r\n" +
+            "    <xsl:variable name=\"IsBindable\">\r\n" +
+            "      <xsl:value-of select=\"@IsBindable\"/>\r\n" +
+            "    </xsl:variable>\r\n" +
+            "    <xsl:text>, params: [</xsl:text>\r\n" +
+            "    <xsl:for-each select=\"edm:Parameter[($IsBindable = 'true' and position() > 1) or (($IsBindable = 'false' or $IsBindable = '') and position() > 0)]\">\r\n" +
+            "      <xsl:text>{ name: '</xsl:text>\r\n" +
+            "      <xsl:value-of select=\"@Name\"/>\r\n" +
+            "      <xsl:text>', type: '</xsl:text>\r\n" +
+            "      <xsl:apply-templates select=\"@Type\" mode=\"render-functionImport-type\" />\r\n" +
+            "      <xsl:text>' }</xsl:text>\r\n" +
+            "      <xsl:if test=\"position() != last()\">, </xsl:if>\r\n" +
+            "    </xsl:for-each>    \r\n" +
+            "    <xsl:text>]</xsl:text>\r\n" +
+            "\r\n" +
+            "    <xsl:text> }</xsl:text>\r\n" +
+            "  </xsl:template>\r\n" +
+            "  \r\n" +
+            "  <xsl:template match=\"@ReturnType\" mode=\"FunctionImport-mode\">\r\n" +
+            "    <xsl:text>, returnType: </xsl:text>\r\n" +
+            "    <xsl:choose>\r\n" +
+            "      <xsl:when test=\"not(.)\">null</xsl:when>\r\n" +
+            "      <xsl:when test=\"starts-with(., 'Collection')\">$data.Queryable</xsl:when>\r\n" +
+            "      <xsl:otherwise>\r\n" +
+            "        <xsl:text>'</xsl:text>\r\n" +
+            "        <xsl:apply-templates select=\".\" mode=\"render-functionImport-type\" />\r\n" +
+            "        <xsl:text>'</xsl:text>\r\n" +
+            "      </xsl:otherwise>\r\n" +
+            "    </xsl:choose>\r\n" +
+            "\r\n" +
+            "    <xsl:if test=\"starts-with(., 'Collection')\">\r\n" +
+            "      <xsl:variable name=\"len\" select=\"string-length(.)-12\"/>\r\n" +
+            "      <xsl:variable name=\"curr\" select=\"substring(.,12,$len)\"/>\r\n" +
+            "      <xsl:variable name=\"ElementType\" >\r\n" +
+            "        <xsl:choose>\r\n" +
+            "          <xsl:when test=\"//edm:Schema[starts-with($curr, @Namespace)]\">\r\n" +
+            "            <xsl:value-of select=\"concat($DefaultNamespace,$curr)\" />\r\n" +
+            "          </xsl:when>\r\n" +
+            "          <xsl:otherwise>\r\n" +
+            "            <xsl:value-of select=\"$curr\" />\r\n" +
+            "          </xsl:otherwise>\r\n" +
+            "        </xsl:choose>\r\n" +
+            "      </xsl:variable>\r\n" +
+            "      <xsl:text>, elementType: '</xsl:text>\r\n" +
+            "      <xsl:value-of select=\"$ElementType\"/>\r\n" +
+            "      <xsl:text>'</xsl:text>\r\n" +
+            "    </xsl:if>\r\n" +
+            "  </xsl:template>\r\n" +
+            "  <xsl:template match=\"@Name\" mode=\"FunctionImport-mode\"></xsl:template>\r\n" +
+            "  <xsl:template match=\"@m:HttpMethod\" mode=\"FunctionImport-mode\">\r\n" +
+            "    <xsl:text>, method: '</xsl:text>\r\n" +
+            "    <xsl:value-of select=\".\"/>\r\n" +
+            "    <xsl:text>'</xsl:text>\r\n" +
+            "  </xsl:template>\r\n" +
+            "  <xsl:template match=\"@IsBindable | @IsSideEffecting | @IsAlwaysBindable | @m:IsAlwaysBindable | @metadata:IsAlwaysBindable | @IsComposable\" mode=\"FunctionImport-mode\">\r\n" +
+            "    <xsl:text>, </xsl:text>\r\n" +
+            "    <xsl:call-template name=\"GetAttributeName\">\r\n" +
+            "      <xsl:with-param name=\"Name\" select=\"name()\" />\r\n" +
+            "    </xsl:call-template>\r\n" +
+            "    <xsl:text>: </xsl:text>\r\n" +
+            "    <xsl:value-of select=\".\"/>\r\n" +
+            "  </xsl:template>\r\n" +
+            "  <xsl:template match=\"@*\" mode=\"FunctionImport-mode\">\r\n" +
+            "    <xsl:text>, '</xsl:text>\r\n" +
+            "    <xsl:call-template name=\"GetAttributeName\">\r\n" +
+            "      <xsl:with-param name=\"Name\" select=\"name()\" />\r\n" +
+            "    </xsl:call-template>\r\n" +
+            "    <xsl:text>': '</xsl:text>\r\n" +
+            "    <xsl:value-of select=\".\"/>        \r\n" +
+            "    <xsl:text>'</xsl:text>\r\n" +
+            "  </xsl:template>\r\n" +
+            "  <xsl:template name=\"GetAttributeName\">\r\n" +
+            "    <xsl:param name=\"Name\" />\r\n" +
+            "    <xsl:choose>\r\n" +
+            "      <xsl:when test=\"contains($Name, ':')\">\r\n" +
+            "        <xsl:value-of select=\"substring-after($Name, ':')\"/>\r\n" +
+            "      </xsl:when>\r\n" +
+            "      <xsl:otherwise>\r\n" +
+            "        <xsl:value-of select=\"$Name\"/>\r\n" +
+            "      </xsl:otherwise>\r\n" +
+            "    </xsl:choose>\r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"edm:EntitySet\">'<xsl:value-of select=\"@Name\"/>': { type: <xsl:value-of select=\"$EntitySetBaseClass\"  />, elementType: <xsl:value-of select=\"concat($DefaultNamespace,@EntityType)\"/><xsl:text> </xsl:text><xsl:apply-templates select=\".\" mode=\"Collection-Actions\" />}</xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"edm:EntitySet\" mode=\"Collection-Actions\">\r\n" +
+            "    <xsl:variable name=\"CollectionType\" select=\"concat('Collection(', @EntityType, ')')\" />\r\n" +
+            "    <xsl:for-each select=\"//edm:FunctionImport[edm:Parameter[1]/@Type = $CollectionType]\">\r\n" +
+            "      <xsl:if test=\"position() = 1\">\r\n" +
+            "        <xsl:text>, actions: { \r\n" +
+            "        </xsl:text>\r\n" +
+            "      </xsl:if>\r\n" +
+            "        <xsl:apply-templates select=\".\"></xsl:apply-templates><xsl:if test=\"position() != last()\">,\r\n" +
+            "        </xsl:if>\r\n" +
+            "      <xsl:if test=\"position() = last()\">\r\n" +
+            "        <xsl:text>\r\n" +
+            "      }</xsl:text>\r\n" +
+            "      </xsl:if>\r\n" +
+            "    </xsl:for-each>\r\n" +
+            "  </xsl:template>\r\n" +
+            "  \r\n" +
+            "  <xsl:template match=\"edm:Property | edm:NavigationProperty\">\r\n" +
+            "    <property>\r\n" +
+            "    <xsl:variable name=\"memberDefinition\">\r\n" +
+            "      <xsl:if test=\"parent::edm:EntityType/edm:Key/edm:PropertyRef[@Name = current()/@Name]\"><attribute name=\"key\">true</attribute></xsl:if>\r\n" +
+            "      <xsl:apply-templates select=\"@*[local-name() != 'Name']\" mode=\"render-field\" />\r\n" +
+            "    </xsl:variable>'<xsl:value-of select=\"@Name\"/>': { <xsl:choose><xsl:when test=\"function-available('msxsl:node-set')\"><xsl:for-each select=\"msxsl:node-set($memberDefinition)/*\">'<xsl:if test=\"@extended = 'true'\">$</xsl:if><xsl:value-of select=\"@name\"/>':<xsl:value-of select=\".\"/>\r\n" +
+            "      <xsl:if test=\"position() != last()\">,<xsl:text> </xsl:text>\r\n" +
+            "    </xsl:if> </xsl:for-each></xsl:when>\r\n" +
+            "  <xsl:otherwise><xsl:for-each select=\"exsl:node-set($memberDefinition)/*\">'<xsl:if test=\"@extended = 'true'\">$</xsl:if><xsl:value-of select=\"@name\"/>':<xsl:value-of select=\".\"/>\r\n" +
+            "      <xsl:if test=\"position() != last()\">,<xsl:text> </xsl:text>\r\n" +
+            "    </xsl:if> </xsl:for-each></xsl:otherwise>\r\n" +
+            "    </xsl:choose> }</property>\r\n" +
+            "</xsl:template>\r\n" +
+            "  \r\n" +
+            "  <xsl:template match=\"@Name\" mode=\"render-field\">\r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"@Type\" mode=\"render-field\">\r\n" +
+            "    <xsl:choose>\r\n" +
+            "      <xsl:when test=\"starts-with(., 'Collection')\">\r\n" +
+            "        <attribute name=\"type\">'Array'</attribute>\r\n" +
+            "        <xsl:variable name=\"len\" select=\"string-length(.)-12\"/>\r\n" +
+            "        <xsl:choose>\r\n" +
+            "          <xsl:when test=\"starts-with(., ../../../@Namespace)\">\r\n" +
+            "            <attribute name=\"elementType\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"substring(.,12,$len)\" />'</attribute>\r\n" +
+            "          </xsl:when>\r\n" +
+            "          <xsl:otherwise>\r\n" +
+            "            <attribute name=\"elementType\">'<xsl:value-of select=\"substring(.,12,$len)\" />'</attribute>\r\n" +
+            "          </xsl:otherwise>\r\n" +
+            "        </xsl:choose>\r\n" +
+            "      </xsl:when>\r\n" +
+            "      <xsl:when test=\"starts-with(., ../../../@Namespace)\">\r\n" +
+            "        <attribute name=\"type\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\".\"/>'</attribute>\r\n" +
+            "      </xsl:when>\r\n" +
+            "      <xsl:otherwise>\r\n" +
+            "        <attribute name=\"type\">'<xsl:value-of select=\".\"/>'</attribute>\r\n" +
+            "      </xsl:otherwise>\r\n" +
+            "    </xsl:choose>\r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"@ConcurrencyMode\" mode=\"render-field\">\r\n" +
+            "    <attribute name=\"concurrencyMode\">$data.ConcurrencyMode.<xsl:value-of select=\".\"/></attribute>\r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"@Nullable\" mode=\"render-field\">\r\n" +
+            "    <attribute name=\"nullable\"><xsl:value-of select=\".\"/></attribute>\r\n" +
+            "    \r\n" +
+            "    <xsl:if test=\". = 'false'\">\r\n" +
+            "      <xsl:choose>\r\n" +
+            "        <xsl:when test=\"parent::edm:Property/@annot:StoreGeneratedPattern = 'Identity' or parent::edm:Property/@annot:StoreGeneratedPattern = 'Computed'\"></xsl:when>\r\n" +
+            "        <xsl:otherwise><attribute name=\"required\">true</attribute></xsl:otherwise>\r\n" +
+            "      </xsl:choose>\r\n" +
+            "    </xsl:if>\r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"@annot:StoreGeneratedPattern\" mode=\"render-field\">\r\n" +
+            "    <xsl:if test=\". != 'None'\"><attribute name=\"computed\">true</attribute></xsl:if>    \r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"@MaxLength\" mode=\"render-field\">\r\n" +
+            "    <attribute name=\"maxLength\">\r\n" +
+            "      <xsl:choose>\r\n" +
+            "        <xsl:when test=\"string(.) = 'Max'\">Number.POSITIVE_INFINITY</xsl:when>\r\n" +
+            "        <xsl:otherwise>\r\n" +
+            "          <xsl:value-of select=\".\"/>\r\n" +
+            "        </xsl:otherwise>\r\n" +
+            "      </xsl:choose>\r\n" +
+            "    </attribute>\r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"@FixedLength | @Unicode | @Precision | @Scale\" mode=\"render-field\">\r\n" +
+            "  </xsl:template>\r\n" +
+            "  <xsl:template match=\"@*\" mode=\"render-field\">\r\n" +
+            "    <xsl:variable name=\"nameProp\">\r\n" +
+            "      <xsl:choose>\r\n" +
+            "        <xsl:when test=\"substring-after(name(), ':') != ''\">\r\n" +
+            "          <xsl:value-of select=\"substring-after(name(), ':')\"/>\r\n" +
+            "        </xsl:when>\r\n" +
+            "        <xsl:otherwise>\r\n" +
+            "          <xsl:value-of select=\"name()\"/>\r\n" +
+            "        </xsl:otherwise>\r\n" +
+            "      </xsl:choose>\r\n" +
+            "    </xsl:variable>\r\n" +
+            "    <xsl:element name=\"attribute\"><xsl:attribute name=\"extended\">true</xsl:attribute><xsl:attribute name=\"name\"><xsl:value-of select=\"$nameProp\"/></xsl:attribute>'<xsl:value-of select=\".\"/>'</xsl:element>\r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"@Relationship\" mode=\"render-field\">\r\n" +
+            "    <xsl:variable name=\"relationName\" select=\"string(../@ToRole)\"/>\r\n" +
+            "    <xsl:variable name=\"relationshipName\" select=\"string(.)\" />\r\n" +
+            "    <xsl:variable name=\"relation\" select=\"key('associations',string(.))/edm:End[@Role = $relationName]\" />\r\n" +
+            "    <xsl:variable name=\"otherName\" select=\"../@FromRole\" />\r\n" +
+            "    <xsl:variable name=\"otherProp\" select=\"//edm:NavigationProperty[@ToRole = $otherName and @Relationship = $relationshipName]\" />\r\n" +
+            "    <xsl:variable name=\"m\" select=\"$relation/@Multiplicity\" />\r\n" +
+            "    <xsl:choose>\r\n" +
+            "      <xsl:when test=\"$m = '*'\">\r\n" +
+            "        <attribute name=\"type\">'<xsl:value-of select=\"$CollectionBaseClass\"/>'</attribute>\r\n" +
+            "        <attribute name=\"elementType\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"$relation/@Type\"/>'</attribute>\r\n" +
+            "        <xsl:if test=\"not($otherProp/@Name)\">\r\n" +
+            "          <attribute name=\"inverseProperty\">'$$unbound'</attribute></xsl:if>\r\n" +
+            "        <xsl:if test=\"$otherProp/@Name\">\r\n" +
+            "          <attribute name=\"inverseProperty\">'<xsl:value-of select=\"$otherProp/@Name\"/>'</attribute></xsl:if>\r\n" +
+            "      </xsl:when>\r\n" +
+            "      <xsl:when test=\"$m = '0..1'\">\r\n" +
+            "        <attribute name=\"type\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"$relation/@Type\"/>'</attribute>\r\n" +
+            "        <xsl:choose>\r\n" +
+            "          <xsl:when test=\"$otherProp\">\r\n" +
+            "            <attribute name=\"inverseProperty\">'<xsl:value-of select=\"$otherProp/@Name\"/>'</attribute>\r\n" +
+            "          </xsl:when >\r\n" +
+            "          <xsl:otherwise>\r\n" +
+            "            <attribute name=\"inverseProperty\">'$$unbound'</attribute>\r\n" +
+            "            <xsl:message terminate=\"no\">  Warning: inverseProperty other side missing: <xsl:value-of select=\".\"/>\r\n" +
+            "          </xsl:message>\r\n" +
+            "          </xsl:otherwise>\r\n" +
+            "        </xsl:choose>\r\n" +
+            "      </xsl:when>\r\n" +
+            "      <xsl:when test=\"$m = '1'\">\r\n" +
+            "        <attribute name=\"type\">'<xsl:value-of select=\"$DefaultNamespace\"/><xsl:value-of select=\"$relation/@Type\"/>'</attribute>\r\n" +
+            "        <attribute name=\"required\">true</attribute>\r\n" +
+            "        <xsl:choose>\r\n" +
+            "          <xsl:when test=\"$otherProp\">\r\n" +
+            "            <attribute name=\"inverseProperty\">'<xsl:value-of select=\"$otherProp/@Name\"/>'</attribute>\r\n" +
+            "          </xsl:when >\r\n" +
+            "          <xsl:otherwise>\r\n" +
+            "            <attribute name=\"inverseProperty\">'$$unbound'</attribute>\r\n" +
+            "            <xsl:message terminate=\"no\">\r\n" +
+            "              Warning: inverseProperty other side missing: <xsl:value-of select=\".\"/>\r\n" +
+            "            </xsl:message>\r\n" +
+            "          </xsl:otherwise>\r\n" +
+            "        </xsl:choose>\r\n" +
+            "      </xsl:when>\r\n" +
+            "    </xsl:choose>\r\n" +
+            "  </xsl:template>\r\n" +
+            "\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"@FromRole | @ToRole\" mode=\"render-field\"></xsl:template>\r\n" +
+            "\r\n" +
+            "  <xsl:template match=\"*\" mode=\"render-field\">\r\n" +
+            "    <!--<unprocessed>!!<xsl:value-of select=\"name()\"/>!!</unprocessed>-->\r\n" +
+            "    <xsl:message terminate=\"no\">  Warning: <xsl:value-of select=\"../../@Name\"/>.<xsl:value-of select=\"../@Name\"/>:<xsl:value-of select=\"name()\"/> is an unknown/unprocessed attribued</xsl:message>\r\n" +
+            "  </xsl:template>\r\n" +
+            "  <!--<xsl:template match=\"*\">\r\n" +
+            "    !<xsl:value-of select=\"name()\"/>!\r\n" +
+            "  </xsl:template>-->\r\n" +
+            "</xsl:stylesheet>"
     }
 
 });
