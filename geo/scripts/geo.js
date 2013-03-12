@@ -40,6 +40,10 @@ function leaflet() {
             });
 		});
 	});
+    
+    lmap.on('click', function(e) {
+        console.log(e.latlng);
+    });
 }
 
 document.addEventListener("deviceready", gmaps, false);
