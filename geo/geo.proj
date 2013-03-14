@@ -32,9 +32,8 @@
     <Folder Include="App_Resources\Android\drawable-nodpi">
       <Platform>Android</Platform>
     </Folder>
-    <Folder Include="jaydata" />
-    <Folder Include="jaydata\jaydatamodules" />
-    <Folder Include="jaydata\jaydataproviders" />
+    <Folder Include="leaflet\images" />
+    <Folder Include="leaflet" />
     <Folder Include="scripts" />
   </ItemGroup>
   <ItemGroup>
@@ -61,60 +60,21 @@
     <Resource Include="App_Resources\Android\drawable-nodpi\splashscreen.9.png" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="leaflet\images\layers.png" />
+    <Content Include="leaflet\images\marker-icon.png" />
+    <Content Include="leaflet\images\marker-icon@2x.png" />
+    <Content Include="leaflet\images\marker-shadow.png" />
     <Content Include="index.html" />
-    <Content Include="jaydata\CREDITS.txt" />
-    <Content Include="jaydata\datajs-1.0.3.min.js" />
-    <Content Include="jaydata\GPL-LICENSE.txt" />
-    <Content Include="jaydata\jaydata-vsdoc.js" />
-    <Content Include="jaydata\jaydata.d.ts" />
-    <Content Include="jaydata\jaydata.js" />
-    <Content Include="jaydata\jaydata.min.js" />
-    <Content Include="jaydata\jaydatamodules\deferred.js" />
-    <Content Include="jaydata\jaydatamodules\deferred.min.js" />
-    <Content Include="jaydata\jaydatamodules\errorhandler.js" />
-    <Content Include="jaydata\jaydatamodules\errorhandler.min.js" />
-    <Content Include="jaydata\jaydatamodules\formBinder.js" />
-    <Content Include="jaydata\jaydatamodules\formBinder.min.js" />
-    <Content Include="jaydata\jaydatamodules\handlebars.js" />
-    <Content Include="jaydata\jaydatamodules\inMemory.js" />
-    <Content Include="jaydata\jaydatamodules\inMemory.min.js" />
-    <Content Include="jaydata\jaydatamodules\kendo.js" />
-    <Content Include="jaydata\jaydatamodules\kendo.min.js" />
-    <Content Include="jaydata\jaydatamodules\knockout.js" />
-    <Content Include="jaydata\jaydatamodules\knockout.min.js" />
-    <Content Include="jaydata\jaydatamodules\qDeferred.js" />
-    <Content Include="jaydata\jaydatamodules\qDeferred.min.js" />
-    <Content Include="jaydata\jaydatamodules\sencha.js" />
-    <Content Include="jaydata\jaydatamodules\sencha.min.js" />
-    <Content Include="jaydata\jaydatamodules\template.js" />
-    <Content Include="jaydata\jaydatamodules\template.min.js" />
-    <Content Include="jaydata\jaydatamodules\Validate.js" />
-    <Content Include="jaydata\jaydatamodules\Validate.min.js" />
-    <Content Include="jaydata\jaydataproviders\FacebookProvider.js" />
-    <Content Include="jaydata\jaydataproviders\FacebookProvider.min.js" />
-    <Content Include="jaydata\jaydataproviders\IndexedDbProvider.js" />
-    <Content Include="jaydata\jaydataproviders\IndexedDbProvider.min.js" />
-    <Content Include="jaydata\jaydataproviders\InMemoryProvider.js" />
-    <Content Include="jaydata\jaydataproviders\InMemoryProvider.min.js" />
-    <Content Include="jaydata\jaydataproviders\MongoDbProvider.js" />
-    <Content Include="jaydata\jaydataproviders\MongoDbProvider.min.js" />
-    <Content Include="jaydata\jaydataproviders\oDataProvider.js" />
-    <Content Include="jaydata\jaydataproviders\oDataProvider.min.js" />
-    <Content Include="jaydata\jaydataproviders\SqLiteProvider.js" />
-    <Content Include="jaydata\jaydataproviders\SqLiteProvider.min.js" />
-    <Content Include="jaydata\jaydataproviders\StormProvider.js" />
-    <Content Include="jaydata\jaydataproviders\StormProvider.min.js" />
-    <Content Include="jaydata\jaydataproviders\WebApiProvider.js" />
-    <Content Include="jaydata\jaydataproviders\WebApiProvider.min.js" />
-    <Content Include="jaydata\jaydataproviders\YQLProvider.js" />
-    <Content Include="jaydata\jaydataproviders\YQLProvider.min.js" />
-    <Content Include="jaydata\MIT-LICENSE.txt" />
     <Content Include="kendo\js\jquery.min.js" />
     <Content Include="kendo\js\kendo.mobile.min.js" />
     <Content Include="kendo\styles\images\back.png" />
     <Content Include="kendo\styles\images\KendoUI.ttf" />
     <Content Include="kendo\styles\images\KendoUI.woff" />
     <Content Include="kendo\styles\kendo.mobile.all.min.css" />
+    <Content Include="leaflet\leaflet-src.js" />
+    <Content Include="leaflet\leaflet.css" />
+    <Content Include="leaflet\leaflet.ie.css" />
+    <Content Include="leaflet\leaflet.js" />
     <Content Include="scripts\geo.js" />
     <Content Include="scripts\GeoJSON.js" />
     <Content Include="styles\main.css" />
