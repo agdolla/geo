@@ -63,6 +63,7 @@
     <Resource Include="App_Resources\Android\drawable-nodpi\splashscreen.9.png" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="jaydata\datajs-1.0.3.min.js" />
     <Content Include="jaydata\jaydata-vsdoc.js" />
     <Content Include="jaydata\jaydata.js" />
     <Content Include="jaydata\jaydata.min.js" />
